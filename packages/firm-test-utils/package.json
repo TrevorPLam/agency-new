@@ -1,0 +1,42 @@
+{
+  "name": "firm-test-utils",
+  "version": "1.0.0",
+  "description": "Shared test utilities and mock factories for the firm platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./factories": {
+      "types": "./dist/factories.d.ts",
+      "import": "./dist/factories.js",
+      "require": "./dist/factories.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "echo 'No tests in test-utils package'",
+    "lint": "eslint src",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@firm/config-typescript": "workspace:*",
+    "@firm/types": "workspace:*",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3"
+  },
+  "peerDependencies": {
+    "zod": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

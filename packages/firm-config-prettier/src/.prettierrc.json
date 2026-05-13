@@ -1,0 +1,26 @@
+{
+  "_comment": "Prettier configuration for Firm Platform monorepo",
+  "_pluginOrdering": [
+    "1. @trivago/prettier-plugin-sort-imports - Sorts and groups imports",
+    "2. prettier-plugin-tailwindcss - Sorts Tailwind CSS classes",
+    "3. prettier-plugin-packagejson - Sorts package.json keys",
+    "Plugins are loaded in this order to ensure consistent formatting across the codebase"
+  ],
+  "singleQuote": true,
+  "trailingComma": "all",
+  "semi": true,
+  "printWidth": 100,
+  "tabWidth": 2,
+  "useTabs": false,
+  "quoteProps": "as-needed",
+  "bracketSpacing": true,
+  "bracketSameLine": false,
+  "arrowParens": "always",
+  "endOfLine": "lf",
+  "embeddedLanguageFormatting": "auto",
+  "insertPragma": false,
+  "proseWrap": "preserve",
+  "htmlWhitespaceSensitivity": "css",
+  "vueIndentScriptAndStyle": false,
+  "requirePragma": false
+}

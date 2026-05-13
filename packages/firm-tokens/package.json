@@ -1,0 +1,48 @@
+{
+  "name": "@firm-org/tokens",
+  "version": "1.0.0",
+  "description": "Design token pipeline for the Firm platform using DTCG format and Style Dictionary",
+  "main": "dist/constants.js",
+  "types": "dist/constants.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "style-dictionary build",
+    "build:clean": "rm -rf dist && style-dictionary build",
+    "dev": "style-dictionary build --watch",
+    "test": "npm run test:output && npm run test:snapshots",
+    "test:output": "test -f dist/variables.css && test -f dist/constants.ts && test -f dist/tokens.json",
+    "test:snapshots": "node scripts/test-snapshots.js",
+    "lint": "echo 'No linting required for token files'",
+    "typecheck": "tsc --noEmit dist/constants.ts",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build && npm run test"
+  },
+  "devDependencies": {
+    "style-dictionary": "^3.8.0",
+    "typescript": "^5.0.0",
+    "chalk": "^5.3.0",
+    "fs-extra": "^11.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/firm-org/agency.git",
+    "directory": "packages/firm-tokens"
+  },
+  "keywords": [
+    "design-tokens",
+    "dtcg",
+    "style-dictionary",
+    "css",
+    "typescript"
+  ],
+  "author": "Firm Org",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

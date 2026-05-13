@@ -1,0 +1,58 @@
+{
+  "name": "@firm/crypto",
+  "version": "1.0.0",
+  "description": "Cryptographic primitives for Firm platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "otplib": "^12.0.1"
+  },
+  "devDependencies": {
+    "@tsconfig/strictest": "^2.0.8",
+    "@types/node": "^22.10.2",
+    "eslint": "^10.3.0",
+    "typescript": "^5.6.3",
+    "tsup": "^8.0.0",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/firm/agency.git",
+    "directory": "packages/firm-crypto"
+  },
+  "keywords": [
+    "crypto",
+    "cryptography",
+    "security",
+    "typescript",
+    "hashing",
+    "encryption"
+  ],
+  "author": "Firm Platform Team",
+  "license": "UNLICENSED"
+}

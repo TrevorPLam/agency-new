@@ -1,0 +1,58 @@
+{
+  "name": "@firm/db",
+  "version": "1.0.0",
+  "description": "Database layer with tenant isolation for Firm Platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./schemas": {
+      "types": "./dist/schemas/index.d.ts",
+      "import": "./dist/schemas/index.js"
+    },
+    "./connection": {
+      "types": "./dist/connection/index.d.ts",
+      "import": "./dist/connection/index.js"
+    },
+    "./helpers": {
+      "types": "./dist/helpers/index.d.ts",
+      "import": "./dist/helpers/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:ci": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@types/pg": "^8.11.0",
+    "drizzle-orm": "^0.30.0",
+    "pg": "^8.11.0",
+    "postgres": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "drizzle-kit": "^0.21.0",
+    "@electric-sql/pglite": "^0.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

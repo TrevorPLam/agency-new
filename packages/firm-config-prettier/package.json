@@ -1,0 +1,31 @@
+{
+  "name": "firm-config-prettier",
+  "version": "1.0.0",
+  "description": "Shared Prettier configuration for the firm platform",
+  "main": "src/.prettierrc.json",
+  "exports": {
+    ".": "./src/.prettierrc.json",
+    "./ignore": "./src/.prettierignore",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/.prettierrc.json",
+    "src/.prettierignore"
+  ],
+  "scripts": {
+    "check": "prettier --check .",
+    "format": "prettier --write .",
+    "test": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "prettier-plugin-packagejson": "^2.5.3",
+    "prettier-plugin-tailwindcss": "^0.6.9"
+  },
+  "peerDependencies": {
+    "prettier": ">=3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

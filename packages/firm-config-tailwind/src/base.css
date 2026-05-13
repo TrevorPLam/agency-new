@@ -1,0 +1,130 @@
+@import "tailwindcss/base";
+
+/* Modern CSS reset */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  * {
+    border-width: 0;
+    border-style: solid;
+    border-color: theme('colors.border');
+  }
+
+  html {
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+    tab-size: 4;
+  }
+
+  body {
+    margin: 0;
+    font-family: theme('fontFamily.sans');
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    background-color: theme('colors.background');
+    color: theme('colors.foreground');
+  }
+
+  /* Remove default margins */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  figure,
+  blockquote,
+  dl,
+  dd {
+    margin: 0;
+  }
+
+  /* Remove list styles on ul, ol elements with a list role */
+  ul[role='list'],
+  ol[role='list'] {
+    list-style: none;
+  }
+
+  /* Set core body defaults */
+  hr {
+    height: 0;
+    color: inherit;
+    border-top-width: 1px;
+  }
+
+  /* Make images responsive by default */
+  img,
+  svg,
+  video,
+  canvas,
+  audio,
+  iframe,
+  embed,
+  object {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* Make sure textareas without a rows attribute are not tiny */
+  textarea {
+    resize: vertical;
+  }
+
+  /* Ensure buttons and inputs reset properly */
+  button,
+  input,
+  optgroup,
+  select,
+  textarea {
+    font-family: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    font-size: 100%;
+    font-weight: inherit;
+    line-height: inherit;
+    color: inherit;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Replace the caret in browsers that don't support caret-color */
+  input::placeholder,
+  textarea::placeholder {
+    opacity: 1;
+    color: theme('colors.muted-foreground');
+  }
+
+  /* Set the default cursor for buttons */
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  /* Make sure disabled buttons don't have any pointer events */
+  button:disabled {
+    pointer-events: none;
+  }
+
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    :root {
+      --color-border: oklch(0.5 0 0);
+    }
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+/* Import all CSS modules in correct order */
+@import "./tokens.css";
+@import "./base.css";
+@import "./components.css";
+@import "./utilities.css";
+
+/* Source comments for monorepo apps are handled by consuming apps */

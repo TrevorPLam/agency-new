@@ -1,0 +1,53 @@
+{
+  "name": "firm-config-eslint",
+  "version": "1.0.0",
+  "description": "Shared ESLint flat configuration for the firm platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    ".oxlintrc.json"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "lint:self": "eslint src --ext .ts,.tsx --config eslint.config.ts",
+    "format": "prettier --write src/**/*.{ts,tsx,json}",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.15.0",
+    "@next/eslint-plugin-next": "^15.1.0",
+    "@types/eslint": "^9.6.1",
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
+    "@typescript-eslint/utils": "^8.59.2",
+    "eslint": "^10.3.0",
+    "eslint-plugin-boundaries": "^4.2.0",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-perfectionist": "^3.9.1",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.14.0",
+    "oxlint": "^1.63.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.59.2"
+  },
+  "peerDependencies": {
+    "eslint": ">=9.0.0",
+    "typescript": ">=5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

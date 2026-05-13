@@ -1,0 +1,53 @@
+{
+  "name": "@firm/logger",
+  "version": "1.0.0",
+  "description": "Structured logging for Firm Platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pino": "^9.0.0",
+    "@firm/types": "workspace:*",
+    "@firm/request-context": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "tsup": "^8.0.0",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/firm/agency.git",
+    "directory": "packages/firm-logger"
+  },
+  "keywords": [
+    "logging",
+    "structured-logging",
+    "json",
+    "pino",
+    "typescript"
+  ],
+  "author": "Firm Platform Team",
+  "license": "UNLICENSED"
+}

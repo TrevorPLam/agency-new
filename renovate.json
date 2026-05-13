@@ -1,0 +1,105 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":automergeDigest",
+    ":automergeBranch",
+    ":automergePr",
+    ":automergeRequireAllStatusChecks",
+    ":dependencyDashboard",
+    ":enableVulnerabilityAlerts",
+    ":gitSignOff",
+    ":label(dependencies)",
+    ":maintainLockFilesWeekly",
+    ":prConcurrentLimit10",
+    ":prHourlyLimit2",
+    ":rebaseStalePrs",
+    ":semanticCommits",
+    "group:monorepos",
+    "group:recommended"
+  ],
+  "automerge": true,
+  "automergeType": "pr",
+  "branchPrefix": "renovate/",
+  "dependencyDashboard": true,
+  "dependencyDashboardLabels": ["renovate"],
+  "draftPR": true,
+  "labels": ["dependencies", "renovate"],
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 1,
+  "rangeStrategy": "bump",
+  "rebaseWhen": "conflicted",
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "updateLockfiles": true,
+  "vulnerabilityAlerts": {
+    "labels": ["security", "renovate"],
+    "schedule": ["at any time"],
+    "commitMessagePrefix": "[SECURITY]"
+  },
+  "packageRules": [
+    {
+      "groupName": "firm packages",
+      "matchPackagePrefixes": ["@firm/"],
+      "rangeStrategy": "update-lockfile",
+      "internalChecksFilter": "strict"
+    },
+    {
+      "groupName": "dev dependencies",
+      "matchDepTypes": ["devDependencies"],
+      "rangeStrategy": "bump",
+      "automerge": true
+    },
+    {
+      "groupName": "build tools",
+      "matchPackagePatterns": ["^@typescript-eslint/", "^eslint", "^oxlint", "^prettier"],
+      "rangeStrategy": "bump",
+      "automerge": true
+    },
+    {
+      "groupName": "testing libraries",
+      "matchPackagePatterns": ["^vitest", "^@vitest/", "^test", "chai"],
+      "rangeStrategy": "bump",
+      "automerge": true
+    },
+    {
+      "groupName": "node.js",
+      "matchPackagePatterns": ["^node"],
+      "enabled": false
+    },
+    {
+      "groupName": "pnpm",
+      "matchPackagePatterns": ["^pnpm"],
+      "enabled": false
+    },
+    {
+      "groupName": "security updates",
+      "matchPackagePatterns": ["*"],
+      "matchCurrentVersion": "!/^0/",
+      "vulnerabilityAlerts": true,
+      "schedule": ["at any time"],
+      "automerge": false,
+      "labels": ["security", "renovate"]
+    },
+    {
+      "groupName": "major updates",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["major", "renovate", "dependencies"]
+    },
+    {
+      "groupName": "minor and patch updates",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "labels": ["dependencies", "renovate"]
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "automerge": true,
+    "schedule": ["before 6am on monday"]
+  },
+  "schedule": ["before 6am on monday"],
+  "timezone": "UTC"
+}

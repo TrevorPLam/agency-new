@@ -1,0 +1,58 @@
+name: Check OpenAPI Breaking Changes
+
+on:
+  pull_request:
+    paths:
+      - 'packages/firm-api-contracts/**'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'packages/firm-api-contracts/**'
+
+jobs:
+  check-openapi-changes:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+      
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      
+      - name: Install dependencies
+        run: |
+          cd packages/firm-api-contracts
+          pnpm install
+      
+      - name: Build OpenAPI document
+        run: |
+          cd packages/firm-api-contracts
+          pnpm run build
+      
+      - name: Check for breaking changes
+        run: |
+          cd packages/firm-api-contracts
+          node scripts/check-openapi-changes.ts
+        env:
+          CI: true
+      
+      - name: Upload OpenAPI diff results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-diff
+          path: |
+            packages/firm-api-contracts/openapi.json
+            packages/firm-api-contracts/openapi-prev.json
+          retention-days: 7

@@ -1,0 +1,14 @@
+{
+  "categories": {
+    "correctness": "warn",
+    "suspicious": "warn",
+    "perf": "warn",
+    "style": "warn",
+    "restriction": "warn",
+    "nursery": "off"
+  },
+  "rules": {
+    "no-console": "off",
+    "no-unused-vars": "warn"
+  }
+}

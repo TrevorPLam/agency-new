@@ -1,0 +1,36 @@
+{
+  "name": "@firm/validators",
+  "version": "1.0.0",
+  "description": "Zod schemas for Firm platform validation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:types": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@firm/types": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

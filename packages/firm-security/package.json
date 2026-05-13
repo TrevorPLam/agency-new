@@ -1,0 +1,69 @@
+{
+  "name": "@firm/security",
+  "version": "0.1.0",
+  "description": "Runtime security middleware for Firm platform",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./csp": {
+      "types": "./dist/csp.d.ts",
+      "import": "./dist/csp.js"
+    },
+    "./headers": {
+      "types": "./dist/headers.d.ts",
+      "import": "./dist/headers.js"
+    },
+    "./rate-limit": {
+      "types": "./dist/rate-limit.d.ts",
+      "import": "./dist/rate-limit.js"
+    },
+    "./turnstile": {
+      "types": "./dist/turnstile.d.ts",
+      "import": "./dist/turnstile.js"
+    },
+    "./tags": {
+      "types": "./dist/tags.d.ts",
+      "import": "./dist/tags.js"
+    },
+    "./csrf": {
+      "types": "./dist/csrf.d.ts",
+      "import": "./dist/csrf.js"
+    },
+    "./audit": {
+      "types": "./dist/audit.d.ts",
+      "import": "./dist/audit.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:ci": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "@firm/cache": "workspace:*",
+    "@firm/crypto": "workspace:*",
+    "@firm/types": "workspace:*",
+    "@firm/utils": "workspace:*",
+    "crypto": "^1.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

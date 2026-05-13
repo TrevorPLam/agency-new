@@ -1,0 +1,36 @@
+{
+  "name": "@firm/config-typescript",
+  "version": "1.0.0",
+  "description": "Shared TypeScript configuration for the firm platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./base.json": "./src/base.json",
+    "./shared-library.json": "./src/shared-library.json",
+    "./app.json": "./src/app.json",
+    "./service.json": "./src/service.json",
+    "./next-app.json": "./src/next-app.json",
+    "./.oxlintrc.base.json": "./src/.oxlintrc.base.json"
+  },
+  "files": [
+    "dist",
+    "src/*.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.self-check.json",
+    "check": "tsc --noEmit -p tsconfig.self-check.json",
+    "check:tsgo": "tsgo --noEmit -p tsconfig.self-check.json",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@tsconfig/strictest": "^2.0.5",
+    "typescript": "^5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

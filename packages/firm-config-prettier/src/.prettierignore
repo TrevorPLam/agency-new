@@ -1,0 +1,52 @@
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Generated files
+*.d.ts
+*.js.map
+*.min.js
+
+# Config files that shouldn't be formatted
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Logs
+*.log
+
+# Cache
+.cache/
+.parcel-cache/
+.eslintcache
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp

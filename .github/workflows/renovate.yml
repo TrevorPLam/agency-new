@@ -1,0 +1,34 @@
+name: Renovate
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Run at 2 AM UTC
+  workflow_dispatch:
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN || github.token }}
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Run Renovate
+        run: |
+          npx --yes renovate@latest
+        env:
+          RENOVATE_AUTODISCOVER: 'true'
+          RENOVATE_AUTODISCOVER_FILTER: 'firm-monorepo'
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN || github.token }}
+          RENOVATE_GIT_AUTHOR: 'Renovate Bot <bot@renovateapp.com>'
+          LOG_LEVEL: 'info'

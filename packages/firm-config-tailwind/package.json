@@ -1,0 +1,34 @@
+{
+  "name": "firm-config-tailwind",
+  "version": "1.0.0",
+  "description": "Shared Tailwind CSS preset for the firm platform",
+  "main": "src/index.css",
+  "exports": {
+    ".": "./src/index.css",
+    "./tokens.css": "./src/tokens.css",
+    "./base.css": "./src/base.css",
+    "./components.css": "./src/components.css",
+    "./utilities.css": "./src/utilities.css",
+    "./safelist.js": "./src/safelist.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/*.css",
+    "src/safelist.js"
+  ],
+  "scripts": {
+    "build": "echo 'No build step needed for CSS'",
+    "check": "echo 'CSS files are valid'",
+    "dev": "echo 'No dev step needed for CSS'"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.0.0"
+  },
+  "peerDependencies": {
+    "tailwindcss": "^4.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": true
+}
