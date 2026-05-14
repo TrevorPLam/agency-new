@@ -31,7 +31,7 @@
 
 #### Subtasks
 - [x] **PH1.1.1** [HUMAN] Draft and commit `SECURITY.md`.
-- [ ] **PH1.1.2** [HUMAN] Draft and commit `CONTRIBUTING.md`.
+- [x] **PH1.1.2** [HUMAN] Draft and commit `CONTRIBUTING.md`.
 - [ ] **PH1.1.3** [AGENT] Create issue templates: `bug_report.md`, `feature_request.md`, `adr_proposal.md`, `security_vulnerability.md` under `.github/ISSUE_TEMPLATE/`.
 - [ ] **PH1.1.4** [AGENT] Create `.github/PULL_REQUEST_TEMPLATE.md`.
 
