@@ -1,1279 +1,1559 @@
-# Marketing Agency Platform  
+# Marketing Agency Platform
 ## Current State Assessment & Phased Implementation Roadmap
 
-**Document purpose:** This is the living, evolving record of the platform’s current condition and the plan to reach its target architecture. It contains the package inventory with health status, known bugs, dependency relationships, testing gaps, a complete inventory of what remains to be built, and the phased construction roadmap. This document is updated as packages are fixed, built, and tested — it is a project control dashboard, not a permanent constitution.
+**Document purpose:** This is the living snapshot of the platform's implementation state. It records package health, known defects, required build sequences, and the phased roadmap. It changes as work progresses.
 
-**Companion document:** For the platform’s invariant rules — the layered taxonomy, stress‑test commitments, enforcement mechanisms, data flow architecture, design vocabulary, and AI agent onboarding guidance — see the **Architecture Constitution & Enforcement Manual**. That document defines the *what* and *why*; this document defines the *where we are* and *how we get there*.
+**Companion document:** For immutable architectural rules, layer definitions, enforcement mechanisms, and data flow patterns, see the **Architecture Constitution & Enforcement Manual** (Blueprint). For resolved decisions, critical security findings, and the ADR backlog, see the **Critique**.
 
----
-
-## Section 1: Current Package Inventory — What Exists Today
-
-Repository has **23 packages** (Layers 0‑4) + 1 demo app. No Layer 5, 6, or 7 packages exist. This section reflects only code that is committed and compilable today.
+**Legend:** 🔴 Critical / blocks progress · 🟠 High / needed this phase · 🟡 Medium / needed next phase · ✅ Clean · ⚠️ Defects present · ❌ Not built
 
 ---
 
-### Package Evolution Plan (Pre‑Phase 2 Structural Changes)
+## §A Package Health Inventory
 
-The following high‑priority structural changes are decided and will be executed early in Phase 1 (Foundation Hardening), before any new L6 feature package is built. They are listed here to prevent confusion about package counts and dependencies during Phase 1 work.
-
-| Change | Current State | Target State | Rationale |
-|--------|---------------|--------------|-----------|
-| **`firm-db` split** | Single package bundling schemas, connections, and query helpers | `firm-db-schema` (L2, lightweight) + `firm-db-client` (L2, connection pools, helpers) | Every L6 package imports `firm-db`; splitting now prevents a multi‑day migration across 35+ packages later |
-| **`firm-rate-limiter` extraction** | Rate‑limiting logic lives inside `firm-security` (broken) | Standalone `firm-rate-limiter` (L3) with named policies, plan‑tier‑aware limits, dry‑run mode, fail‑open | Reduces `firm-security` surface; enables independent testing and policy governance |
-| **`firm-test-utils` → `firm-testing`** | Named `firm-test-utils`, scope limited to mock factories | Renamed `firm-testing`; expanded to include PGLite harness, ioredis‑mock, `createUnitHarness`, `createIntegrationHarness`, `createE2eHarness`, `createTenantIsolationFixture` | Reflects promoted scope; rename is a fast Phase 1 action |
-| **`firm-ai` split** | Blueprint originally specified a single `firm-ai` L6 package | `firm-ai` (L6 Tier A infrastructure: model routing, cost metering, rate limiting) + `firm-ai-content` (L6 Tier D: generation, human‑approval gate, C2PA manifests, NY disclosure) | Compliance boundary must be explicit; analytical AI and generative AI have different risk profiles and regulatory obligations |
-| **Adapter count correction** | Assessment previously stated 33 adapters planned | **105** adapters (all 22 categories, per‑provider packages) | The Critique catalogued every provider; 33 was a category count, not a package count |
-| **Application count correction** | Assessment previously stated 5 applications | **22** applications under `apps/platform/`; grouping into 3‑5 apps is an active ADR recommendation | Full platform surface area must be visible in the plan, even if subsequently grouped |
-
-**Packages currently being tracked as “built” = 23.** After Phase 1 hardening, `firm-rate-limiter`, `firm-db-schema`, and `firm-db-client` will be extracted/created, increasing the built count. The progress tracker (Section 8) will reflect these as they are completed.
+Current state of every package across all eight layers. Definitions, interfaces, and rules for each package are in Blueprint §2. This section records only status, known defects, and required actions.
 
 ---
 
-### 1.1 Package Inventory Table
+### A.0 Layer 0 — Build & Constraint (13 packages)
 
-| # | Package | Layer | Status | Purpose (short) |
-|---|---------|-------|--------|-----------------|
-| 1 | `firm-primitives` | 0 | ❌ not extracted | Branded IDs (`TenantId`, `UserId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`), gatekeepers, helper types (planned) |
-| 2 | `firm-types` | 2 | ⚠️ to split | Domain entities + adapter Ports – currently holds L0 primitives |
-| 3 | `firm-utils` | 1 | ✅ ready | Pure utilities: Result, deep‑merge, tryCatch, strings |
-| 4 | `firm-errors` | 1 | ✅ ready | RFC 7807 error hierarchy |
-| 5 | `firm-crypto` | 1 | ✅ ready | HMAC, TOTP, constant‑time compare, key gen |
-| 6 | `firm-logger` | 1 | ❌ critical bug | Structured JSON logging – split‑brain context bug |
-| 7 | `firm-request-context` | 1 | ⚠️ untested | AsyncLocalStorage context propagation – **0% tests**; also has `[key: string]: any` design flaw |
-| 8 | `firm-env` | 1 | ✅ ready | Zod env validation, startup guard |
-| 9 | `firm-validators` | 2 | ❌ broken | Zod schemas – campaign missing imports, lead migration bugs |
-| 10 | `firm-api-contracts` | 2 | ✅ ready | Event registry, tRPC/OpenAPI contracts |
-| 11 | `firm-db` | 2 | ⚠️ **to be split** | Drizzle schemas, RLS, outbox, connections – **split into `firm-db-schema` + `firm-db-client` before any L6 build** |
-| 12 | `firm-cache` | 2 | ✅ ready (needs TTL fix) | Tenant‑scoped Redis, key factory, tag invalidation |
-| 13 | `firm-security` | 3 | ❌ broken | CSP, CSRF, rate limiting (will lose rate limiter to `firm-rate-limiter`), Turnstile, headers, C2PA manifests |
-| 14 | `firm-auth` | 3 | ⚠️ blocked | Sessions, RBAC, API keys, MFA – depends on broken `firm-security`; will depend on `firm-rate-limiter` post‑extraction |
-| 15 | `firm-consent` | 3 | ✅ ready | GDPR/CCPA consent, GPC, server‑side resolution |
-| 16 | `firm-observability` | 4 | ⚠️ deprecated re‑export | OpenTelemetry, Sentry – logger wrapper deprecated |
-| 17 | `firm-health` | 4 | ✅ ready (needs OTEL check) | Liveness, readiness, RLS check – missing OTEL health check |
-| 18 | `firm-config-eslint` | 0 | ✅ ready | Flat config with layer boundaries, branded‑ID rule |
-| 19 | `firm-config-next` | 0 | ✅ ready | Next.js config factory, CSP, Turbopack |
-| 20 | `firm-config-tailwind` | 0 | ✅ ready | Safelist, content paths |
-| 21 | `firm-config-typescript` | 0 | ✅ ready | TS config factory (app/service/library) |
-| 22 | `firm-testing` | testing | ✅ ready (expanding) | *(renamed from `firm-test-utils`)* Mock factories, random data generators; adding PGLite harness, ioredis‑mock, `createUnitHarness`, `createIntegrationHarness`, `createE2eHarness`, `createTenantIsolationFixture` |
-| 23 | `firm-tokens` | 0/5 | ✅ ready | DTCG design tokens → CSS/TS (Layer 0 only) |
+All Layer 0 packages are **configuration-only** with no runtime code (except `firm-primitives` gatekeepers). No bugs have been found. All 13 are considered clean.
+
+| Package | Status | Notes |
+|---------|--------|-------|
+| `firm-primitives` | ✅ | Branded IDs + gatekeepers; domain IDs excluded (live in `firm-types`) |
+| `firm-config-eslint` | ✅ | `boundaries` plugin, `no-direct-fetch`, `no-direct-read-model-write`, `workers` boundary type present |
+| `firm-config-typescript` | ✅ | Strict, composite, declaration maps enabled |
+| `firm-config-prettier` | ✅ | Frozen |
+| `firm-config-next` | ✅ | Next.js 15; `serverExternalPackages: ['pino','drizzle-orm','postgres']` confirmed |
+| `firm-config-tailwind` | ✅ | |
+| `firm-config-vitest` | ✅ | Coverage threshold ≥80% configured |
+| `firm-config-playwright` | ✅ | |
+| `firm-config-commitlint` | ✅ | |
+| `firm-config-docker` | ✅ | Multi-stage; non-root UID ≥10000; `tini`; `HEALTHCHECK` |
+| `firm-config-storybook` | ✅ | |
+| `firm-config-security-headers` | ✅ | CSP/HSTS/Permissions-Policy factory; defaults confirmed |
+| `firm-tokens` | ✅ | W3C DTCG; `no-runtime-tokens-import` ESLint rule present |
 
 ---
 
-### 1.2 What Is Not Yet Represented Here
+### A.1 Layer 1 — Core Utilities & Environment (12 target packages)
 
-The following packages are decided and documented in the Blueprint but have no code committed yet. They are listed for forward visibility; the Progress Tracker (Section 8) tracks them as “❌ not built.”
+Six packages exist; six are missing. All six existing packages have defects. The missing packages are prerequisites for Layer 2 schema work and must be built in Phase 0.
 
-- **`firm-rate-limiter`** (L3) — decided, required before Phase 2. Extracted from `firm-security` during Phase 1.
-- **`firm-db-schema`** and **`firm-db-client`** (L2) — created from the `firm-db` split during Phase 1.
-- **All 16 Tier A infrastructure packages** (Phase 2)
-- **All 8 Tier B operations packages** (Phase 4)
-- **All 2 Tier C revenue packages** (Phase 5)
-- **All 11 Tier D client‑facing packages**, including `firm-ai` and `firm-ai-content` (Phase 6)
-- **`firm-portal`** (Phase 7)
-- **All 105 adapter packages** (Phase 3, parallel)
-- **All 22 applications** under `apps/platform/` (Phase 8)
+| Package | Status | Severity | Required Actions |
+|---------|--------|----------|-----------------|
+| `firm-request-context` | ⚠️ defects | 🔴 | Remove `[key: string]: any` (module augmentation); add `withRequestContext()` for job handlers; add `extendContext(additions)`; write full test suite (nested async, concurrent, `Promise.all`, `setImmediate`, job handler wrapper) |
+| `firm-logger` | ⚠️ splitbrain bug | 🔴 | Delete internal `ContextManager.currentContext`; read exclusively from `getUnifiedContext()`; add `logger.child(bindings)`; configurable sampling (guaranteed error/warn); `createTestLogger()`; auto `pino-pretty` in dev |
+| `firm-utils` | ⚠️ 3 missing, 1 bug | 🟠 | Fix `hashIp` salt (throw if <16 chars); add `retry<T>` (full-jitter, `isRetryable` hook, `onRetry`); `sleep(ms)`; `paginate(cursor, limit, direction)`; named sub-exports (`@firm/utils/result`, `/retry`, `/pagination`) |
+| `firm-crypto` | ⚠️ 3 missing, 1 redundancy | 🟠 | Remove `generateUUID` (use `firm-id`); add `generateSecureToken(bytes)`; `encryptField/decryptField` (AES-256-GCM, `keyId`); `deriveKey(password, salt, iterations?)` |
+| `firm-errors` | ⚠️ 2 missing | 🟠 | Add `isRetryable(error): boolean`; `toTRPCError(error)`; `toHTTPResponse(error, status?)`; `FirmError.withContext(additions)` |
+| `firm-env` | ✅ minor gaps | 🟡 | Add secret format validation (`.url()`, `.min(32)`, DB URL validator); typed `environment` export; `getSecret(key)` lazy accessor |
+| `firm-date` | ❌ missing | 🔴 | `toISOStringUTC`, `parseISO`, `addDuration`, `isWithinWindow`, `formatRelative`, `startOfPeriod`, `isExpired`. **Must exist before any L2 schema or `firm-bus`.** |
+| `firm-id` | ❌ missing | 🔴 | `generateId()` UUID v7; `generateShortId()`; `generateApiKeyToken()`; `isValidId()`; `toSlug()`; `isValidSlug()`. **Must exist before any table is created.** |
+| `firm-sanitize` | ❌ missing | 🔴 | `sanitizeHtml(html, policy)` (named policies: `strict`, `rich-text`, `email`, `cms`); `stripHtml`; `sanitizeUrl`; `sanitizeFilename`; `escapeHtml`. **Phase 0, before forms/CMS.** |
+| `firm-invariant` | ❌ missing | 🟠 | `invariant`; `assertNonNull<T>`; `assertNever`; `assertValidated<T>(schema, value)` |
+| `firm-circuit-breaker` | ❌ missing | 🟡 | CLOSED/OPEN/HALF-OPEN state machine; `failureThreshold`, `recoveryTimeout`, `successThreshold`; `onStateChange` metrics callback; `getState()`. **Phase 2, before any L7 adapter is built.** |
+| `firm-codec` | ❌ missing | 🟡 | `toBase64Url/fromBase64Url`; `toHex/fromHex`; `encodeQueryString/decodeQueryString`; `serializeJSON/deserializeJSON<T>`; `toCSV(rows)`. **Phase 2.** |
 
----
-
-### 1.3 Authoritative Platform Totals
-
-These numbers replace all previous estimates in the Assessment. They are derived from the Blueprint’s canonical package list as validated by the Master Analysis.
-
-| Metric | Value |
-|--------|-------|
-| Total planned packages (L0–L7) | **187** |
-| Packages currently built | **23** |
-| Packages still to build | **~164** *(including splits and new packages)* |
-| Planned adapter packages | **105** (across 22+ categories) |
-| Planned applications (`apps/platform/`) | **22** *(ADR pending: recommend grouping into 3‑5)* |
-| Background workers (`workers/`) | **13** *(renamed from `services/`)* |
-| Total artifacts (packages + workers + apps) | **~231** |
-| Current completion (packages only) | **23 / 187 = 12.3%** |
-
-**Note on completion percentage:** The 12.3% figure reflects only packages with committed, compilable code. It does not yet include packages whose design is decided but whose code will be created via extraction during Phase 1 (e.g., `firm-rate-limiter`, `firm-db-schema`, `firm-db-client`). Section 8 will track these as they are completed, and the percentage will increase as Phase 1 hardening concludes.
+**Cross-cutting note:** `firm-request-context` and `firm-logger` share the same root cause — two independent context stores diverging under concurrency. Both must be fixed in the same sprint: one store (`firm-request-context`'s `AsyncLocalStorage`), all readers delegate via `getUnifiedContext()`.
 
 ---
 
-## Section 2: Deep‑Dive Package Health Reports
+### A.2 Layer 2 — Data & Contracts (16 target packages)
 
-**Legend:** `✅`=ready, `⚠️`=partial/needs work, `❌`=broken/not built, `L#`=Layer, `Fix N`=refers to §7.1 critical fix.
+Eight packages exist (or are partially built); eight are missing. The `firm-db` monolith must be split before any Layer 6 package is built.
 
----
+| # | Package | Status | Severity | Required Actions |
+|---|---------|--------|----------|-----------------|
+| 1 | `firm-types` | ⚠️ structurally flawed | 🔴 | Extract `firm-primitives` (Layer 0); add all domain branded IDs (`LeadId`, `CampaignId`, `BookingId`, `InvoiceId`, `ProjectId`, `ContactId`, `DealId`, `FormId`, `PageId`, `ContentId`, `DocumentId`); extract Port interfaces to `firm-ports`; write ADR-003 (shared kernel boundary) |
+| 2 | `firm-validators` | ⚠️ broken + misaligned | 🔴 | Fix 4 bugs (missing imports, v1↔v2 migration non-existent fields, reverse migration broken, no compilation safeguard); implement drizzle-zod bridge (Drizzle table = single structural truth; `firm-validators` adds only `.refine()` business rules); add schema factories (`createPaginationSchema`, `createTenantScopedSchema`, `createVersionedSchema`, `createIdempotencySchema`, `createWebhookPayloadSchema`, `createAuditableSchema`); add `satisfies` CI conformance gate |
+| 3 | `firm-api-contracts` | ✅ scope too wide | 🟠 | Extract event contracts to `firm-events`; add tRPC sub-routers per domain from day one; ADR evaluating oRPC |
+| 4 | `firm-db-schema` | ❌ not yet split | 🔴 | Split from `firm-db`; Drizzle table definitions; RLS policy generators (default + parent-agency); migration source of truth; `drizzle-zod` bridge (`createInsertSchema`, `createSelectSchema`); zero runtime connection deps |
+| 5 | `firm-db-client` | ❌ not yet split | 🔴 | Split from `firm-db`; connection factories (`serverless`, `pooled`, `direct`); PgBouncer-safe RESET wrapper (Fix 8 — highest-severity security fix); `withTenantContext`; `withTransaction`; `writeToOutbox`; `paginateCursor`; `softDelete`; `batchQuery`; `withOptimisticLock`; fix `table: any` → `PgTable` |
+| 6 | `firm-db-read` | ❌ pending ADR | 🔴 | ADR-003 decides location. Default: separate `firm-db-read` package. Denormalised read schema; separate connection pool; ESLint `no-direct-read-model-write` |
+| 7 | `firm-cache` | ⚠️ 4 gaps | 🟠 | Fix TTL Zod validation at `set()` (Fix 1); add `lock(key, fn, ttl)` distributed lock (Redlock multi-node, SETNX+TTL single-node); Prometheus `firm.cache.hit/miss` counters; `scope: 'local'\|'global'` on `invalidate()` |
+| 8 | `firm-sdk` | ❌ not built | 🟠 | Generated from tRPC; `FirmClient.withTenant(tenantId)` mandatory entry; `@firm/sdk/node` + `@firm/sdk/browser` sub-exports; `verifyWebhookSignature`; `X-RateLimit-Remaining` parsing |
+| 9 | `firm-events` | ❌ missing | 🔴 | `defineEvent(name, version, payloadSchema)`; `deprecateEvent` (CI sunset gate); `EventRegistry`; `createEventHandler`; `CloudEventsEnvelope<T>`; `createWebhookPayloadSchema`; `generateAsyncApiDocument` → AsyncAPI 3.0. **Prerequisite for `firm-bus`.** |
+| 10 | `firm-idempotency` | ❌ missing | 🔴 | `createIdempotencyStore(redis)`; `withIdempotency(key, fn, options)`; `IdempotencyKey` branded type; `generateIdempotencyKey`; `parseIdempotencyHeader`; TTL default 24h; conflict detection |
+| 11 | `firm-query` | ❌ missing | 🔴 | `createTenantQuery(db, tenantId)`; `withSoftDeleteFilter`; `paginateCursor<T>`; `withAuditFields`; `batchQuery<T>`; `withOptimisticLock`. **Prerequisite for all L6 packages.** |
+| 12 | `firm-pagination` | ❌ missing | 🟠 | `PaginatedResponse<T>`; `encodeCursor/decodeCursor`; `createPageSchema<T>`; `DEFAULT_PAGE_SIZE=25`; `MAX_PAGE_SIZE=100`; `OffsetPage` |
+| 13 | `firm-ports` | ❌ missing | 🟠 | 22+ typed Port interfaces extracted from `firm-types`; `createPortMock<T extends Port>()`; `@since` JSDoc versioning. **Prerequisite for all L7 adapters.** |
+| 14 | `firm-db-migrations` | ❌ missing | 🟠 | `runMigrations`; `checkDrift()` CI gate; `generateMigration`; `rollback` (non-prod); `getTenantMigrationState`; `recordTenantMigration`; CLI: `db:migrate`, `db:check-drift`, `db:generate` |
+| 15 | `firm-schema-registry` | ❌ missing | 🟡 | Version registry; `validateSchemaCompatibility`; `generateContractArtifacts` → `contracts/v1/`; CI breaking-change gate; consumer tracking |
+| 16 | `firm-db-seed` | ❌ missing | 🟡 | `seedPlatform`, `seedAgency`, `seedSubAccount`, `seedLeads`, `seedCampaigns`, `clearTenant`; deterministic (fixed seed); respects RLS via `withTenantContext` |
 
-### 2.0 `firm-primitives` (L0) – ❌ not extracted
-Intent: branded IDs (`TenantId`, `UserId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`), gatekeepers (`asTenantId`), pure helper types. Zero runtime deps.  
-Current: does not exist – types live inside `firm-types`.  
-Required: extract from `firm-types`, add gatekeeper unit tests. Deps: none. Blocks: layer boundary enforcement. **Fix 8.**
-
----
-
-### 2.1 `firm-types` (L2) – ⚠️ to split
-Intent: domain entity interfaces (`Lead`, `Booking`, etc.), adapter Ports, API envelopes. Depends on `firm-primitives`.  
-Current: holds L0 primitives. After extraction, pure types only (compile‑time tests sufficient).  
-Note: the full entity inventory required for a complete shared kernel is far larger than currently listed – see the Blueprint for the canonical list (tenants, leads, campaigns, content, operations, commercial, automation, reputation/seo, compliance, messaging, platform). An ADR defining the shared kernel boundary (which entities stay here vs. migrate to their owning feature package) must be written before any L6 package is built.  
-Bugs: none after split. **Fix 8** (extraction).
-
----
-
-### 2.2 `firm-utils` (L1) – ✅ ready
-Intent: pure functions, `Result<T,E>` type, `tryCatch`, deep‑merge, strings.  
-Required additions: `retry<T>(fn, options)` (exponential backoff + jitter, needed by adapters, bus, SDK), `sleep(ms)`, `paginate(cursor, limit, direction)` (pure pagination math). These are shared utilities that should not be re‑implemented in every consumer.  
-Bugs: `hashIp` salt param ignored (docs mismatch). Tests: good (4 files). Deps: `@firm/types` (types only).
-
----
-
-### 2.3 `firm-errors` (L1) – ✅ ready
-Intent: RFC 7807 error hierarchy (`FirmError` base, concrete subclasses).  
-Required additions: `isRetryable(error): boolean` (predicate for outbox worker retry/dead‑letter routing) and `toTRPCError()`/`toHTTPResponse()` (standardised serialisation).  
-Tests: good. Deps: `@firm/types` (`ErrorCategory`).
+**drizzle-zod bridge** is not a new package — it is a mandatory cross-cutting action in Phase 1: `firm-db-schema` exports `createInsertSchema(table)` and `createSelectSchema(table)`; `firm-validators` imports these and adds only `.refine()` business rules. A field added to a Drizzle table automatically propagates to Zod — eliminating the drift that caused the four documented `firm-validators` bugs.
 
 ---
 
-### 2.4 `firm-crypto` (L1) – ✅ ready
-Intent: HMAC, constant‑time compare, key/token gen, TOTP (wraps `otplib`).  
-Required additions: `generateSecureToken(bytes)`, `encryptField`/`decryptField` (column‑level encryption for PII/payment tokens), `deriveKey(password, salt)` (per‑tenant key derivation).  
-Bugs: `generateUUID` duplicates `crypto.randomUUID()` – **remove**, do not leave as a known redundancy. Tests: good (3 files). Deps: `otplib` (external).
+### A.3 Layer 3 — Identity, Security & Consent (5 target packages)
+
+| Package | Status | Severity | Required Actions |
+|---------|--------|----------|-----------------|
+| `firm-security` | ⚠️ broken, scope too wide | 🔴 | Fix `CacheClient` import (Fix 2a); extract rate limiter (Fix 2b); integrate `firm-consent` state into `buildCsp(nonce, tenantId, consentedTags)`; add `validateOutboundUrl(url, options)` (SSRF: enforce `https://`, block RFC 1918, loopback, 169.254.x.x); add `generateSriHash(scriptContent)`; define C2PA write path interface with `firm-ai-content` (before Aug 2 deadline) |
+| `firm-rate-limiter` | ❌ not yet extracted | 🔴 | Extract from `firm-security` (Fix 2b); Redis sliding window + token bucket; named policy registry; `responseMode: 'hard'\|'graduated'` (warn 80%, throttle 90%, block 100%); `setEmergencyOverride(policyName, limits, ttl)`; `scope: 'local'\|'global'`; `registerAdaptivePolicy(name, triggerFn)`; fail-open on Redis unreachable; dry-run mode |
+| `firm-auth` | ⚠️ 6 structural gaps | 🟠 | Fix Fix 3 (remove `startImpersonationLegacy`; tighten `session.role` string → `Role`); add `context?` param to `requirePermission` (ABAC extension path); reserve `credentialId`/`credentialType` in session schema; define `refreshSession`/`revokeSession`/`RevocationStore`; expand `createApiKey()` with `scope`, `expiresAt`, `ipAllowlist`, `rateLimit`; add SCIM orchestration hooks (`onUserProvisioned`, `onUserDeprovisioned`, `onGroupUpdated`); add `createDelegatedSession(userId, agentId, scope, ttl)` |
+| `firm-consent` | ⚠️ 4 compliance gaps | 🔴 | **Jun 15 (33 days):** Google Consent Mode v3 `ad_storage` gate + CI Gate 14; **Jul 14 (62 days):** add `shouldTrackEmail(userId, tenantId, jurisdiction): boolean` (CNIL pixel suppression); connect consent state changes to `firm-audit` (GDPR Art. 7(1)); DSR workflow delegated to `firm-compliance` |
+| `firm-policy` | ❌ missing | 🟠 | `PolicyRule`; `evaluate(request): PolicyDecision`; `createRbacMatrix`; `createAbacPolicy`; `PermissionGuard`; decision caching TTL 30–60s; deny → auto `firm-audit` write |
 
 ---
 
-### 2.5 `firm-logger` (L1) – ❌ critical bug
-Intent: structured JSON logging (Pino) with PII redaction, context from `firm-request-context`.  
-Bugs: **split‑brain** – `ContextManager` maintains own `currentContext` alongside unified store → can diverge in concurrent async contexts.  
-Enhancements needed: `logger.child(bindings)` support (request‑scoped child loggers), configurable sampling (errors/warnings never dropped), `createTestLogger()` (in‑memory array for test assertions).  
-Tests: good for PII redaction, **no test for split‑brain scenario**. Deps: `pino`, `@firm/request-context`. **Fix 9.**
+### A.4 Layer 4 — Observability & Health (3 target packages)
+
+| Package | Status | Severity | Required Actions |
+|---------|--------|----------|-----------------|
+| `firm-observability` | ⚠️ 1 gap | 🟠 | Add `observabilityHealthCheck()` (OTel init + span export verified) for readiness probe (Fix 7); confirm dual-level PII redaction (field-path + regex) wired; confirm `withTenantSpan()` auto-attaches `tenantId`, `userId`, `correlationId` |
+| `firm-health` | ⚠️ 1 gap | 🟠 | Add `observabilityHealthCheck()` to readiness probe (Fix 7); add IoC `registerHealthCheck(name, fn, { critical })`; add `isShuttingDown()` export; add `@firm/health/shutdown` with `registerShutdownHandler(fn, priority)`; escalating alert strategy for synthetic checks |
+| `firm-resilience` | ❌ retired | — | **Resolved:** circuit-breaker logic lives in `firm-circuit-breaker` at Layer 1. Bulkhead + timeout patterns are implemented as named policies within `firm-circuit-breaker`. No separate Layer 4 package. |
+
+**Note on `firm-telemetry-client`:** RUM browser/Node bundling conflict requires an ADR before apps are built. Provisional: RUM stays as `@firm/observability/rum` sub-export with `react-server` condition guard. Re-evaluate at Phase 5.
 
 ---
 
-### 2.6 `firm-request-context` (L1) – ⚠️ untested + design flaw
-Intent: unified `AsyncLocalStorage` store for correlationId, traceId, tenantId, userId.  
-Bugs: `RequestContext` has `[key: string]: any` – a typo in a key fails silently at runtime, defeating TypeScript’s purpose. **Replace with module augmentation**: packages that need to extend context declare additions in their own `.d.ts` files. Also missing: `withRequestContext()` wrapper for Inngest/BullMQ job handlers.  
-Tests: **0% – none exist**. Highest infrastructure risk. Deps: `@firm/types`. **Fix 6** (add tests + fix design flaw).
+### A.5 Layer 5 — UI, Theming & Testing (4 existing + 5 missing packages)
+
+#### Existing Packages
+
+| Package | Status | Severity | Required Actions |
+|---------|--------|----------|-----------------|
+| `firm-tokens` | ⚠️ 3 gaps | 🟠 | Adopt W3C DTCG stable spec (Oct 2025) for multi-brand output: `tokens/base.json` + `semantic.json` + `brands/<slug>.json` → Style Dictionary generates one CSS file per brand; enforce `no-runtime-tokens-import` ESLint rule before any component is built |
+| `firm-ui` | ❌ not built | 🔴 | Declare RSC boundary in `exports` (`react-server` condition); CI gate: no `useState/useEffect/useContext/event-handlers` in server exports; resolve icon bundle isolation ADR (`firm-icons` or `@firm/ui/icons`); `@firm/ui/dataviz` separate chunk (`sideEffects:false`, own peer deps); WCAG 2.2 AA: `toBeAccessible()` Vitest assertion + `@storybook/addon-a11y` on every component; Chromatic visual regression in CI via `firm-config-storybook` |
+| `firm-theme-provider` | ❌ not built | 🟠 | Server component calls `firm-tenant-config.resolve(tenantId)`; `buildThemeVars(theme)` pure server utility; `<ThemeProvider vars={cssVars} />` as `'use client'`; dark mode per-tenant (`localStorage` key `darkMode_${tenantId}`, system-pref fallback); `validateThemeContrast(theme)` checks WCAG 2.2 AA before `firm-tenant-config` persists |
+| `firm-testing` | ⚠️ 5 gaps | 🟠 | Add `createVitestProject(options)` for composite build path resolution (Vitest 3.2+); default `pool: 'forks'` for packages with singleton state; `createServerComponentHarness()`; fixture factories (`createLeadFactory`, `createCampaignFactory`, `createTenantFactory`, `createUserFixture`, `createSessionFixture`); `expectNoA11yViolations(container)` axe-core matcher |
+
+#### Missing Packages
+
+| Package | Priority | Phase | Purpose |
+|---------|----------|-------|---------|
+| `firm-hooks` | 🔴 | Phase 5 | Shared React hooks: context (`useTenantTheme`, `useRequestId`), UI (`useDebounce`, `useMediaQuery`, `useOutsideClick`, `useIntersectionObserver`, `usePrevious`, `useLocalStorage`, `useReducedMotion`), forms (`useFormField`, `useFieldArray`, `useFormSubmitState`), async (`useAsyncState`, `useOptimisticUpdate`, `useEventSource`). Never imports from Layer 6. |
+| `firm-email-templates` | 🔴 | Phase 5 | React Email templates: transactional, billing, notifications, agency reporting. All accept `TenantBranding` prop. White-label ready. `firm-template-engine` injects branding at send time. |
+| `firm-icons` | 🟠 | Phase 5 | Pending icon ADR. Either dedicated package or `@firm/ui/icons` sub-export. `sideEffects: false`. |
+| `firm-storybook-utils` | 🟡 | Phase 5 | Shared Storybook decorators, mock providers (`TenantThemeDecorator`, `SessionDecorator`, `ConsentDecorator`), argTypes factories. |
+| `firm-kpi` | 🟡 | Phase 6 | KPI definitions and calculations for dashboards. Formerly misnamed `firm-telemetry`. Provides typed KPI schemas, calculation functions, and threshold definitions consumed by `firm-reporting`. |
 
 ---
 
-### 2.7 `firm-env` (L1) – ✅ ready
-Intent: Zod validation of env vars at startup. Auth, DB, Redis, platform schemas.  
-Required enhancement: validate **format** of secrets (URL structure, key prefix/length), not just presence. Add `environment` export (`'development' | 'staging' | 'production'`) for environment‑aware behaviour across packages.  
-Tests: excellent (5 files). Deps: `@t3-oss/env-nextjs`, `zod`.
+### A.6 Layer 6 — Feature Packages & Workers (38 target packages)
+
+No Layer 6 package may be built until all Phase 0 and Phase 1 prerequisites are complete (see §D). Status below reflects the current state.
+
+#### Tier A — Core Infrastructure (14 packages)
+
+| Package | Status | Phase | Notes |
+|---------|--------|-------|-------|
+| `firm-bus` | ❌ not built | Phase 3 | Blocked by ADR-001 (`firm-bus` execution model). Interface abstracted regardless of outcome. |
+| `firm-flags` | ❌ not built | Phase 3 | `expiresAt` mandatory on temporary flags; CI expiration gate |
+| `firm-metering` | ⚠️ post-op only | 🔴 Phase 1 | Fix 10: add `checkQuota(tenantId, dimension, amount)`; CI static-analysis gate (Gate New1); quota warning at 80% |
+| `firm-audit` | ❌ not built | Phase 3 | SQL hash chain; `writeAuditRecord`; `verifyAuditChain`; `exportAuditLog`; `createAuditMiddleware()`; `expungeRecord` (GDPR); race protection via `firm-cache` distributed lock |
+| `firm-tenant-config` | ❌ not built | Phase 3 | cache→DB→migration→Zod; `tenant-config.updated` event; merge-with-defaults; 5-version rollback |
+| `firm-template-engine` | ❌ not built | Phase 3 | Liquid (email/SMS); Handlebars (PDF, ADR pending); version history; locale vars; preview |
+| `firm-notifications` | ❌ not built | Phase 4 | Multi-channel; digest batching; per-channel retry policies; unread count |
+| `firm-webhooks` | ❌ not built | Phase 4 | HMAC signing; retries; delivery logs |
+| `firm-sse` | ❌ not built | Phase 4 | Server-Sent Events; real-time dashboards and portals |
+| `firm-media` | ❌ not built | Phase 4 | Multi-provider; image/video processing; metadata stripping; CDN; `checkQuota()` enforced |
+| `firm-search` | ❌ not built | Phase 4 | Tenant isolation model requires ADR before build (external index partitions vs. PostgreSQL RLS) |
+| `firm-i18n` | ❌ not built | Phase 4 | Translation keys; ICU MessageFormat; RTL; locale-aware formatting |
+| `firm-ai` | ❌ not built | Phase 4 | AI infrastructure only: provider routing, token counting, cost metering, model selection. Blocked by ADR-004 (`firm-ai` split). |
+| `firm-worker-runtime` | ❌ not built | Phase 3 | `createWorker(options)` factory; graceful `SIGTERM` drain; K8s readiness/liveness HTTP server; worker-level metrics; uncaught exception handling; startup dependency checks (DB, Redis ready) |
+
+#### Tier B — Operations (8 packages)
+
+| Package | Status | Phase | Notes |
+|---------|--------|-------|-------|
+| `firm-provisioning` | ❌ not built | Phase 4 | Inherit-and-detach model; idempotent sagas; dry-run mode; GDPR erasure |
+| `firm-compliance` | ❌ not built | Phase 4 | Right-to-erasure sagas (anonymise → export → retain → hard delete); Art. 30 reports; data residency assertion |
+| `firm-projects` | ❌ not built | Phase 5 | `ProjectTemplate` aggregate; `createProjectFromTemplate()`; task dependency tracking |
+| `firm-sales-pipeline` | ❌ not built | Phase 5 | Deal pipeline; `lead.scored` event contract required first (emitted by `firm-ai`, consumed here); formerly `firm-pipeline` |
+| `firm-documents` | ❌ not built | Phase 5 | PDF generation; e-signature; multi-signatory; DOCX/HTML merge fields; event contracts with `firm-sales-pipeline` and `firm-billing` must be defined first |
+| `firm-appointments` | ❌ not built | Phase 5 | Round-robin assignment; collective booking; group appointments; no-show policies |
+| `firm-workflow` | ❌ not built | Phase 5 | **Blocked by ADR-007** (condition model, state machine, trigger types, compensation model all undefined). Do not begin implementation before ADR is merged. |
+| `firm-integrations` | ❌ not built | Phase 5 | Unified OAuth health dashboard; proactive token refresh → `getValidToken(providerId, tenantId)` for adapter injection |
+
+#### Tier C — Revenue (3 packages)
+
+| Package | Status | Phase | Notes |
+|---------|--------|-------|-------|
+| `firm-subscriptions` | ❌ not built | Phase 5 | `computeUsageCharge(tenantId, billingPeriod)` reads `firm-metering`, applies plan pricing, returns typed line items for `firm-billing` |
+| `firm-payments` | ❌ not built | Phase 5 | Stripe/Paddle/PayPal/Square; split payments; two-tier idempotency (financial webhooks → PostgreSQL; others → Redis) |
+| `firm-billing` | ❌ not built | Phase 5 | Invoicing; revenue recognition; dunning; `SplitRule` aggregate (platform % + agency %) for white-label reseller revenue share |
+
+#### Tier D — Client-Facing & Marketing (12 packages)
+
+| Package | Status | Phase | Notes |
+|---------|--------|-------|-------|
+| `firm-portal` | ❌ not built | Phase 6 | White-label; per-sub-account module config; portal activity audit |
+| `firm-inbox` | ❌ not built | Phase 6 | Unified conversations; assignment; SLA tracking; all inbound channels converge here |
+| `firm-reporting` | ❌ not built | Phase 6 | CQRS read model; pre-computed metrics; branded PDF/email reports; anomaly detection; `firm-kpi` integration |
+| `firm-cms` | ❌ not built | Phase 6 | Headless; content staging; multilingual locale fallback |
+| `firm-forms` | ❌ not built | Phase 6 | Conditional logic; multi-step; partial save/resume; field-level abandonment analytics; CRM field-mapping validation at publish time |
+| `firm-landing-pages` | ❌ not built | Phase 6 | Block-based; A/B testing; Core Web Vitals per variant; pixels fire only after consent granted |
+| `firm-funnels` | ❌ not built | Phase 6 | Multi-step behaviour-driven marketing automation; funnel analytics; strictly separate bounded context from `firm-workflow` |
+| `firm-social` | ❌ not built | Phase 6 | Outbound scheduling only; inbound DMs → `firm-inbox` via `social.dm.received` event |
+| `firm-seo` | ❌ not built | Phase 6 | Keyword tracking; backlink monitoring; technical audits; structured data; SERP feature detection |
+| `firm-reputation` | ❌ not built | Phase 6 | Review monitoring; AI-suggested replies; mandatory human-approval gate; no auto-publishing |
+| `firm-ads` | ❌ not built | Phase 6 | Ad performance aggregation; budget alerts; UTM management; ad fatigue detection |
+| `firm-ai-content` | ❌ not built | 🔴 Phase 4 | AI content + image generation; always `pending_approval`; C2PA manifest (Aug 2 deadline); NY Synthetic Performer labels (Jun 9 deadline); blocked by ADR-004 |
 
 ---
 
-### 2.8 `firm-validators` (L2) – ❌ broken
-Intent: Zod schemas for all entities, `satisfies` against `firm-types`.  
-Required factory additions: `createPaginationSchema()`, `createTenantScopedSchema(baseSchema)`, `createVersionedSchema(schema, version)`.  
-Bugs: (1) `campaign.ts` missing imports for `uuidField` etc. (2) lead v1→v2 migration references non‑existent fields. (3) v2→v1 reverse migration also broken. (4) no compilation safeguard.  
-Tests: only `enum-validation.test.ts`. Deps: `@firm/types`, `zod`. **Fix 4.**
+### A.7 Layer 7 — Adapters (105 target packages)
+
+**Current state:** 0 of 105 built. Adapter scaffolding generator exists. No hand-authored adapters are permitted.
+
+**Auto-generated registry:** `packages/layer7-adapters/REGISTRY.md` — regenerated on every adapter creation.
+
+**Build prerequisite:** `firm-ports` (L2) must be complete and interface-frozen before any adapter is scaffolded.
+
+**Priority queue** — first 20 adapters to build, in order:
+
+| Priority | Adapter | Unblocks |
+|----------|---------|----------|
+| 1 | `adapters-storage-local` | Local media development (Fix 9 — production blocker for `firm-media` in dev) |
+| 2 | `adapters-storage-s3` | `firm-media` production |
+| 3 | `adapters-storage-r2` | `firm-media` production (Cloudflare) |
+| 4 | `adapters-email-resend` | `firm-notifications`, welcome emails, magic links |
+| 5 | `adapters-email-sendgrid` | `firm-notifications` fallback |
+| 6 | `adapters-payments-stripe` | `firm-payments`, `firm-billing`, `firm-subscriptions` |
+| 7 | `adapters-ai-openai` | `firm-ai`, `firm-ai-content` |
+| 8 | `adapters-ai-anthropic` | `firm-ai` fallback |
+| 9 | `adapters-sms-twilio` | `firm-notifications` SMS channel |
+| 10 | `adapters-crm-hubspot` | `firm-sales-pipeline`, CRM sync worker |
+| 11 | `adapters-crm-gohighlevel` | Primary CRM target for agency vertical |
+| 12 | `adapters-analytics-ga4` | `firm-reporting`, consent gate integration |
+| 13 | `adapters-analytics-posthog` | Internal product analytics |
+| 14 | `adapters-scim-okta` | `firm-auth` enterprise provisioning |
+| 15 | `adapters-scim-azure-ad` | `firm-auth` enterprise provisioning |
+| 16 | `adapters-pdf-puppeteer` | `firm-documents`, `firm-billing` (invoices) |
+| 17 | `adapters-social-meta` | `firm-social`, `firm-ads` |
+| 18 | `adapters-ads-google` | `firm-ads` |
+| 19 | `adapters-reviews-google-business` | `firm-reputation` |
+| 20 | `adapters-calendar-google` | `firm-appointments` |
+
+Remaining 85 adapters are built in Phases 6–7, ordered by feature package dependencies.
 
 ---
 
-### 2.9 `firm-api-contracts` (L2) – ✅ ready
-Intent: event registry (`defineEvent`, versioning), tRPC/OpenAPI routes, CloudEvents.  
-Required additions: `deprecateEvent(name, version, sunsetDate)` (with CI enforcement), `createWebhookPayloadSchema(eventSchema)` (standard outbound webhook envelope), tRPC sub‑routers organised by domain (`leadsRouter`, `campaignsRouter`, etc.) from day one.  
-Note: an ADR evaluating oRPC (single contract → tRPC + OpenAPI) must be written before L6 build begins.  
-Bugs: redundant re‑exports in `events/index.ts` (harmless). Tests: event registry covered; tRPC/OpenAPI untested. Deps: `zod`, `@asteasolutions/zod-to-openapi`, `@firm/types`.
+## §B Phase 1 Fix Sequence
+
+The authoritative 11-fix sequence is defined in **Critique §3.2**. It must be executed in exact order — each fix's "Unblocks" column is a hard dependency, not a suggestion. The table below is reproduced for self-contained reference, with three cross-cutting actions appended that are not package-level fixes but must complete within Phase 1.
+
+### B.1 Authoritative Fix Sequence (from Critique §3.2)
+
+| # | Fix | Package | Severity | Unblocks |
+|---|-----|---------|----------|----------|
+| 0 | Add comprehensive tests + fix design flaw (remove `[key: string]: any`; module augmentation; add `withRequestContext()`; `extendContext()`) | `firm-request-context` | 🔴 | Everything above L1 |
+| 1 | `TenantCache.set()` reject non-numeric TTL | `firm-cache` | 🔴 | Fix 2 |
+| 2a | Rate limiter: fix `CacheClient` import | `firm-security` | 🔴 | Fix 3 |
+| 2b | Extract rate limiter into `firm-rate-limiter` | new: `firm-rate-limiter` | 🔴 | Clean L3 boundaries |
+| 3 | Remove `startImpersonationLegacy`; tighten `session.role` `string` → `Role` | `firm-auth` | 🟠 | — |
+| 4 | Campaign missing imports; lead v1↔v2 migration non-existent fields; reverse migration broken | `firm-validators` | 🔴 | All feature packages |
+| 5 | Move `import { or }` to top; replace `table: any` with `PgTable` | `firm-db` | 🟡 | Type safety |
+| 6 | Remove `ContextManager.currentContext` (splitbrain) — read only from `getUnifiedContext()` | `firm-logger` | 🔴 | Trace/tenant correlation |
+| 7 | Add `observabilityHealthCheck()` to readiness probe (OTel init + span export) | `firm-health` | 🟠 | Production readiness |
+| 8 | Add PgBouncer RESET wrapper | `firm-db-client` (post-split) | 🔴 | Tenant isolation |
+| 9 | Create `adapters-storage-local` | new: adapter package | 🔴 | All local media development |
+| 10 | Add `checkQuota()` + CI static-analysis enforcement gate | `firm-metering` | 🔴 | Usage control guarantee |
+
+### B.2 Cross-Cutting Phase 1 Actions
+
+These are not package-level bug fixes but must complete within Phase 1. They are preconditions for any Phase 2 work.
+
+| # | Action | Scope | Why Phase 1 |
+|---|--------|-------|-------------|
+| X1 | **drizzle-zod bridge** — `firm-db-schema` exports `createInsertSchema(table)` and `createSelectSchema(table)`; `firm-validators` imports these and adds only `.refine()` business rules | `firm-db-schema`, `firm-validators` | Eliminates the dual source of truth that caused all four `firm-validators` bugs; every L6 package depends on correct validation |
+| X2 | **`dep-fence` script** — walk full dependency graph; catch dynamic imports, re-exports, layer violations that ESLint's static `boundaries` analysis misses | `scripts/ci/dep-fence.ts` | Must be active before any new package is added; retroactive enforcement is exponentially harder |
+| X3 | **`exports` field audit** — ensure every existing package's `exports` field lists only its true public API; add a CI script that fails on any import of an unlisted internal path | All L0–L4 packages | Required before any L5/L6 package imports from them; prevents accidental coupling to internals |
 
 ---
 
-### 2.10 `firm-db` (L2) – ⚠️ **HIGH PRIORITY SPLIT PENDING**
-Intent: Drizzle schemas, connections (serverless/pooled/direct), RLS policies, outbox helpers, pagination.  
-**Structural decision:** Before any L6 package is built, `firm-db` will be split into:
-- **`firm-db-schema`** (L2): Drizzle schema definitions, RLS policies, migration source of truth – lightweight, zero runtime deps beyond Drizzle.
-- **`firm-db-client`** (L2): connection factories, outbox helpers, pagination, PgBouncer‑safe RESET wrapper – heavyweight, imports `postgres`, `drizzle-orm`, `ioredis`.
-- **CQRS read model** home: subdirectory `firm-db/src/schemas/reporting/` (Option B, with CODEOWNERS override) or separate `firm-db-read` package (Option A). ADR pending.
+## §C Compliance Deadline Calendar
 
-This split prevents every L6 package from pulling in connection pool infrastructure when it only needs schema types.  
-Current bugs: (1) outbox import at bottom of file. (2) `softDelete` uses `any` instead of `PgTable`. (3) must update Drizzle RLS API from deprecated `.enableRLS()` to `pgTable.withRLS(...)`.  
-Tests: good (6 files, PgLite integration). Deps: `drizzle-orm`, `postgres`, `@firm/request-context`, `@firm/types`. **Fix 5** (cleanup). Split is a **Phase 1 gate** before any infrastructure package build.
+Reproduced from **Critique §3.3** for self-contained reference. All four deadlines are active and in force. None are optional.
 
----
+| Deadline | Days Remaining | Obligation | Packages | Done Definition |
+|----------|---------------|------------|----------|----------------|
+| **Jun 9, 2026** | ~27 days | NY Synthetic Performer Act — AI-generated performer labels | `firm-ai-content`, `firm-consent` | Disclosure label stored in `ai_generation_log`; rendered non-removable in all client-facing surfaces |
+| **Jun 15, 2026** | ~33 days | Google Consent Mode v3 | `firm-consent`, all `apps/clients/*` | `ad_storage` gates Google Ads; CI Gate 14 verifies; GCM v3 translation layer active |
+| **Jul 14, 2026** | ~62 days | CNIL — email tracking pixel consent | `firm-consent`, `firm-notifications` | Pixel suppressed for EU users until explicit opt-in; `shouldTrackEmail(userId, tenantId, jurisdiction)` implemented |
+| **Aug 2, 2026** | ~81 days | EU AI Act Art. 50 — C2PA manifests | `firm-security`, `firm-ai`, `firm-ai-content` | C2PA manifest generated and stored in `ai_generation_log.c2pa_manifest` for every AI-generated asset |
 
-### 2.11 `firm-cache` (L2) – ✅ ready (needs TTL contract fix + additions)
-Intent: tenant‑scoped Redis client, `CacheKeyFactory`, `TagManager`, connection pooling.  
-Required additions: `acquireLock(key, ttlMs)` (distributed lock via Redis `SET NX` – prevents duplicate cron execution across workers) and `warmCache(keys)` (pre‑populates high‑traffic keys at startup to avoid cold‑cache thundering herd).  
-Bugs: `TenantCache.set` expects `ttlSeconds?: number`, but consumer may pass `{ ttl }` object → corrupts TTL.  
-Tests: only JSON parsing test; `set`, key factory, tag manager, pool untested. Deps: `ioredis`. **Fix 1.**
+**Risk note:** Jun 9 and Jun 15 both fall within Phase 1. `firm-ai-content` and `firm-consent` must be prioritised above non-compliance work in Phase 1 even though full L6 construction is Phase 3+. The specific compliance outputs (disclosure label storage schema, GCM v3 translation layer) can be delivered as minimal targeted implementations within `firm-ai-content` and `firm-consent` ahead of the full Tier D build.
 
 ---
 
-### 2.12 `firm-security` (L3) – ❌ broken
-Intent: CSP, CSRF, rate limiting (will be extracted to `firm-rate-limiter`), Turnstile, security headers, tag registry, audit logger.  
-Post‑extraction scope (retained): CSP nonce pipeline, CSRF, Turnstile, security headers middleware, tag registry, audit logging, C2PA manifest generation (Aug 2 EU AI Act deadline).  
-Required additions: `validateCorsOrigin(origin, tenantId)` (tenant‑aware allowed origins from `firm-tenant-config`), `Permissions-Policy` header definitions.  
-Bugs: (1) rate limiter imports `{ CacheClient }` – no such export (should be `TenantCache`). (2) `set()` call passes object instead of TTL number. (3) headers middleware is Next.js‑only.  
-Tests: CSP, CSRF, policy definitions covered; rate limiter cannot be instantiated. Deps: `@firm/cache`, `@firm/crypto`, `next/server`. **Fix 2a** (fix import); **Fix 2b** (extract rate limiter to new package).
+## §D Phased Implementation Roadmap
+
+### Overview
+
+| Phase | Name | Primary Output | Hard Prerequisites |
+|-------|------|---------------|-------------------|
+| **0** | L1 Foundations | All 6 missing L1 packages built | Nothing — start here |
+| **1** | Critical Fixes + L2/L3 Surgery | All 11 fixes complete; L2 split; L3 extracted; drizzle-zod bridge; compliance minimums | Phase 0 complete |
+| **2** | L2 Missing Packages + L4 + L5 Gaps | `firm-events`, `firm-idempotency`, `firm-query`, `firm-pagination`, `firm-ports`, `firm-db-migrations`; L4 additions; `firm-testing` gaps | Phase 1 complete; ADR-003 resolved |
+| **3** | L6 Tier A — Core Infrastructure | `firm-bus`, `firm-audit`, `firm-tenant-config`, `firm-template-engine`, `firm-worker-runtime`, `firm-flags`, first 4 workers | Phase 2 complete; ADR-001 resolved |
+| **4** | L6 Tier A — Delivery + AI + First Adapters | `firm-notifications`, `firm-webhooks`, `firm-sse`, `firm-media`, `firm-ai`, `firm-ai-content`; priority adapters 1–11 | Phase 3 complete; ADR-004 resolved |
+| **5** | L6 Tier B + C — Operations + Revenue | `firm-provisioning`, `firm-compliance`, `firm-projects`, `firm-appointments`, `firm-sales-pipeline`, `firm-documents`, `firm-subscriptions`, `firm-payments`, `firm-billing`, `firm-integrations` | Phase 4 complete; ADR-007 resolved |
+| **6** | L6 Tier D + L5 UI | All 12 Tier D packages; `firm-ui`, `firm-theme-provider`, `firm-hooks`, `firm-email-templates`; priority adapters 12–20 | Phase 5 complete |
+| **7** | L7 Adapters — Full Rollout | Remaining 85 adapters; `firm-schema-registry`, `firm-db-seed` | Phase 6 complete; `firm-ports` frozen |
+| **8** | Apps + E2E | All 22 (or grouped) platform apps; E2E suite; load tests; chaos tests | Phase 7 complete; app grouping ADR resolved |
 
 ---
 
-### 2.13 `firm-auth` (L3) – ⚠️ blocked by `firm-security`; will shift dependency
-Intent: unified auth (cookie/bearer/API key), frozen `SessionContext`, RBAC matrix (three‑tier hierarchy: platform‑admin, agency‑admin, sub‑account‑admin, sub‑account‑user), API keys (sub‑account scoping required), TOTP MFA, impersonation/delegation, audit logging.  
-Post‑extraction: will depend on `firm-rate-limiter` directly for MFA/API key rate limiting, removing the indirect `firm-security` dependency for this concern.  
-Required additions: `createApiKeyForTenant()` must support sub‑account scoping; RBAC matrix must explicitly model the three‑tier hierarchy with clear inheritance rules; `validateCorsOrigin(origin, tenantId)` should be centralised (likely in `firm-auth` or `firm-security`).  
-Bugs: (1) `session.role` typed as `string` instead of `Role`. (2) deprecated `startImpersonationLegacy` still exported (TOCTOU‑vulnerable). (3) audit logging falls back to `console.log` on import failure with no alert.  
-Tests: excellent (7 files). Deps: `@firm/db`, `@firm/cache`, `@firm/security` (blocked), `@firm/crypto`, `@firm/validators`, `better-auth`. **Fix 3** (type fix + remove deprecated). Will unblock fully when Fix 2a/2b complete.
+### Phase 0 — L1 Foundations
+
+**Goal:** Build the six missing Layer 1 packages. These are pure utilities with no upstream dependencies — they can be built in parallel. Nothing above Layer 1 is stable until they exist.
+
+**Why a named phase:** `firm-id` affects every primary key type (UUID v7 decision is irreversible once tables exist). `firm-date` affects every timestamp serialisation and outbox retry schedule. `firm-sanitize` is a Phase 1 security necessity — user-authored HTML in emails, CMS, and templates is an active XSS attack surface. These three in particular cannot be retrofitted safely.
+
+**Packages to build:**
+
+| Package | Parallel Group | Blocking? |
+|---------|---------------|-----------|
+| `firm-id` | A | 🔴 Blocks all L2 schemas |
+| `firm-date` | A | 🔴 Blocks `firm-bus`, all timestamp-bearing schemas |
+| `firm-sanitize` | A | 🔴 Blocks forms, CMS, template engine, inbox |
+| `firm-invariant` | B (after `firm-errors`) | 🟠 Needed by L2+ packages |
+| `firm-circuit-breaker` | C (Phase 2 entry) | 🟡 Needed before any L7 adapter |
+| `firm-codec` | C (Phase 2 entry) | 🟡 Needed by SDK, reporting exports |
+
+> **Note:** `firm-circuit-breaker` and `firm-codec` are listed as Phase 0 targets but may begin in parallel with Phase 1 as capacity allows. They are not blockers for Phase 1 fixes.
+
+**Enhancements to existing L1 packages (parallel with new builds):**
+
+- `firm-utils`: add `retry<T>`, `sleep`, `paginate`; fix `hashIp` salt
+- `firm-errors`: add `isRetryable`, `toTRPCError`, `toHTTPResponse`, `withContext`
+- `firm-crypto`: remove `generateUUID`; add `generateSecureToken`, `encryptField/decryptField`, `deriveKey`
+- `firm-env`: add secret format validation; typed `environment`; `getSecret` lazy accessor
+
+**Go/No-Go for Phase 1:** All of `firm-id`, `firm-date`, `firm-sanitize`, and `firm-invariant` are built, tested (≥80% coverage), and merged. `firm-utils.retry<T>` is complete. `firm-errors.isRetryable` is complete.
 
 ---
 
-### 2.14 `firm-consent` (L3) – ✅ ready (with compliance deadline gaps)
-Intent: consent categories, GPC detection, signed cookies (HMAC), server‑side resolution, React context gate.  
-Required additions (with hard deadlines):
-- **Google Consent Mode v3 translation layer** – Jun 15 deadline. Translates `ConsentRecord` into `gtag('consent', 'update', {...})`. Must fire before any Google tag initialises. ADR required for CSP nonce integration with `firm-config-next`.
-- **TCF 2.2 consent string encoding** – required for EU programmatic ads. A significant missing capability, not a minor gap.
-- **CNIL email tracking pixel consent (France)** – Jul 14 deadline. Pixels suppressed for EU users until explicit marketing opt‑in.
-Bugs: (1) cookie parsing splits on `=` – value with `=` would truncate (unlikely). (2) `gpcApplied` flag not in signed payload – **audit gap**, must be fixed.  
-Tests: good (3 files). Deps: `@firm/crypto`, `@firm/types`, `react`.
+### Phase 1 — Critical Fixes + L2/L3 Surgery
+
+**Goal:** Execute all 11 fixes from §B.1 in exact order. Split `firm-db`. Extract `firm-rate-limiter`. Implement the drizzle-zod bridge. Deliver compliance minimums for Jun 9 and Jun 15 deadlines. Run cross-cutting actions X1–X3.
+
+**Execution order:**
+
+**Sprint 1A — Infrastructure spine (Fix 0, 1, 6 in parallel after Fix 0 unblocks)**
+1. Fix 0: `firm-request-context` — tests + design flaw. This is the single highest-risk item; nothing above L1 is trustworthy until the splitbrain is eliminated.
+2. Fix 6: `firm-logger` — remove `ContextManager.currentContext`. Must follow Fix 0 (reads from `getUnifiedContext()`). Can be done same day.
+3. Fix 1: `firm-cache` TTL validation. Small, isolated.
+
+**Sprint 1B — Security layer (Fix 2a, 2b, 3)**
+4. Fix 2a: `firm-security` `CacheClient` import.
+5. Fix 2b: Extract `firm-rate-limiter`. Add graduated response mode, emergency override, `scope` API, adaptive threshold hook.
+6. Fix 3: `firm-auth` — remove `startImpersonationLegacy`; tighten `session.role`.
+
+**Sprint 1C — Data layer (Fix 4, 5, 8 + drizzle-zod + db split)**
+7. Fix 4: `firm-validators` — 4 documented bugs.
+8. Fix 5: `firm-db` — type safety fixes (pre-split cleanup).
+9. Split `firm-db` → `firm-db-schema` + `firm-db-client` + `firm-db-read` (pending ADR-003 for read model home).
+10. Fix 8: PgBouncer RESET wrapper in `firm-db-client`.
+11. Action X1: Implement drizzle-zod bridge.
+
+**Sprint 1D — Observability + metering + adapter (Fix 7, 9, 10)**
+12. Fix 7: `firm-health` + `firm-observability` — `observabilityHealthCheck()`.
+13. Fix 9: Scaffold `adapters-storage-local` via generator.
+14. Fix 10: `firm-metering` — add `checkQuota()`; add CI Gate New1 (static-analysis enforcement).
+
+**Sprint 1E — CI hardening + compliance minimums (X2, X3 + compliance)**
+15. Action X2: `dep-fence` script — activate in CI.
+16. Action X3: `exports` field audit — all L0–L4 packages.
+17. **Jun 9 compliance (27 days):** `firm-ai-content` schema stub — add `ai_generation_log` table with `disclosure_label` and `c2pa_manifest` columns to `firm-db-schema`. Disclosure label storage wired; rendered non-removable in any surface that shows AI content. This is a targeted minimum — full `firm-ai-content` build is Phase 4.
+18. **Jun 15 compliance (33 days):** `firm-consent` — Google Consent Mode v3 `ad_storage` gate; CI Gate 14 added; GCM v3 translation layer active.
+
+**Go/No-Go for Phase 2:** All 11 fixes merged and CI green. `firm-db` split complete with PgBouncer RESET wrapper. `firm-rate-limiter` extracted. drizzle-zod bridge active. `dep-fence` and `exports` audit passing. Jun 9 disclosure label wired. Jun 15 GCM v3 gate active.
 
 ---
 
-### 2.15 `firm-observability` (L4) – ⚠️ deprecated re‑export
-Intent: OpenTelemetry/Sentry init, `withSpan`, `captureException`, metrics.  
-Required additions from day one: `withTenantSpan(name, fn)` (auto‑attaches tenant.id, user.id, correlation.id), `captureError(error, context)` (enriches Sentry events with tenant context), `createTenantMeter(tenantId)` (tenant‑labeled Prometheus metrics), `resetForTesting()` (bypasses double‑init guard).  
-Bugs: (1) `logger.ts` deprecated but still primary entry point. (2) double‑initialisation guard may throw in demo app. (3) Sentry PII redaction US‑centric (no international).  
-Tests: minimal (only PII redaction). Deps: `@opentelemetry/api`, `@sentry/node`, `pino`, `@firm/logger`, `@firm/request-context`. **Fix 7.**
+### Phase 2 — L2 Missing Packages + L4 + L5 Gaps
+
+**Goal:** Build all remaining Layer 2 missing packages, completing the data + contracts layer. Close L4 gaps. Begin L5. Resolve ADR-003 before this phase starts.
+
+**Build sequence (L2 — order matters due to dependencies):**
+
+| Step | Package | Depends On |
+|------|---------|-----------|
+| 1 | `firm-events` | `firm-api-contracts` (extract from), `firm-id`, `firm-date` |
+| 2 | `firm-pagination` | `firm-primitives`, Zod |
+| 3 | `firm-idempotency` | `firm-cache`, `firm-id`, `firm-errors` |
+| 4 | `firm-db-migrations` | `firm-db-schema` (post-split) |
+| 5 | `firm-query` | `firm-db-client`, `firm-pagination`, `firm-id` |
+| 6 | `firm-ports` | `firm-types` (post-surgery) |
+| 7 | `firm-sdk` | `firm-api-contracts`, `firm-events`, `firm-id` |
+| 8 | `firm-schema-registry` | `firm-events`, `firm-api-contracts` |
+| 9 | `firm-db-seed` | `firm-db-client`, `firm-db-schema`, `firm-testing` |
+
+**L2 surgery (parallel with new builds):**
+- `firm-types`: extract `firm-primitives` (done in Phase 1 if not yet); add all domain branded IDs; begin Port interface extraction (completes as `firm-ports` builds)
+- `firm-api-contracts`: tRPC sub-routers per domain; oRPC ADR evaluation
+
+**L4 additions (parallel with L2):**
+
+| Package | Action |
+|---------|--------|
+| `firm-health` | `registerHealthCheck` IoC; `isShuttingDown()`; `@firm/health/shutdown` with `registerShutdownHandler`; escalating alert strategy for synthetic checks |
+| `firm-observability` | Confirm ESM loader hook entry point (`@firm/observability/instrumentation`); RUM sub-export provisional (`@firm/observability/rum`) pending telemetry ADR |
+
+**L5 gaps (parallel with L2, but after L4 stabilises):**
+- `firm-tokens`: multi-brand DTCG output; `no-runtime-tokens-import` ESLint rule enforced
+- `firm-testing`: `createVitestProject`; `pool: 'forks'` default; `createServerComponentHarness`; fixture factories; `expectNoA11yViolations`
+
+**Jul 14 compliance (within Phase 2 window):** `firm-consent` — add `shouldTrackEmail(userId, tenantId, jurisdiction): boolean`; wire EU pixel suppression; connect consent state changes to `firm-audit` write path.
+
+**Go/No-Go for Phase 3:** All L2 missing packages built and tested. `firm-events` EventRegistry operational. `firm-query` and `firm-pagination` complete. `firm-ports` interface-frozen (git tag `iface-freeze/v1-ports`). `firm-db-migrations` `checkDrift()` gate active in CI. ADR-001 (`firm-bus` execution model) resolved.
 
 ---
 
-### 2.16 `firm-health` (L4) – ✅ ready (needs OTEL check + structural enhancements)
-Intent: liveness, readiness (RLS, dependencies), startup, synthetic checks.  
-Required enhancements: **event‑driven health check registration** – L6 feature packages register domain‑specific health checks without importing `firm-health` directly (inversion‑of‑control to avoid L4→L6 layer violation). Synthetic runner must replace `setInterval` with recursive `setTimeout` wrapped in try/catch, with escalating alert strategy (first failure warns, three consecutive fires `SyntheticCheckFailed` alert).  
-Bugs: (1) RLS check opens new connection per invocation (not pooled). (2) synthetic runner uses `setInterval` – no error recovery.  
-Missing: **observability health check** (OTel initialised, spans exporting). Tests: good for existing probes. **Fix 10.**
+### Phase 3 — L6 Tier A: Core Infrastructure
+
+**Goal:** Build the core infrastructure packages and workers that every feature package depends on. Nothing in Tier B–D can proceed until this phase is complete.
+
+**Hard prerequisites:** ADR-001 resolved (`firm-bus` execution model). ADR-003 resolved (read model home). `firm-ports` frozen.
+
+**Build sequence:**
+
+| Step | Package | Key Constraints |
+|------|---------|----------------|
+| 1 | `firm-worker-runtime` | `createWorker(options)`; graceful `SIGTERM` drain; K8s probes; worker metrics; startup dependency checks. **Built first** — all workers depend on it. |
+| 2 | `firm-audit` | SQL hash chain; `writeAuditRecord`; `verifyAuditChain`; `exportAuditLog`; `createAuditMiddleware()`; `expungeRecord`. Depends on `firm-db-client`, `firm-cache` distributed lock. |
+| 3 | `firm-tenant-config` | cache→DB→migration→Zod; `tenant-config.updated` event (requires `firm-events`); merge-with-defaults; 5-version rollback. |
+| 4 | `firm-bus` | Event bus + outbox reader; retries; dead-letter; cron; sagas. Depends on `firm-events`, `firm-idempotency`, `firm-worker-runtime`. Interface is ADR-outcome-agnostic. |
+| 5 | `firm-flags` | Boolean, rollout, segments, plan-gated. `expiresAt` mandatory (CI expiration gate active). Redis unreachable → `defaultValue`. |
+| 6 | `firm-template-engine` | Liquid (email/SMS); Handlebars (PDF, ADR pending); version history; locale vars; preview. Depends on `firm-sanitize`, `firm-i18n` stub. |
+| 7 | `firm-metering` | (already partially exists from Fix 10) — complete full `recordUsage()` aggregation pipeline; Redis counters; periodic DB flush. |
+
+**Workers to scaffold (using `firm-worker-runtime`):**
+
+| Worker | Depends On |
+|--------|-----------|
+| `worker-outbox-processor` | `firm-bus` |
+| `worker-tenant-provisioning` | `firm-bus`, `firm-tenant-config` |
+| `worker-data-retention` | `firm-bus`, `firm-compliance` stub |
+| `worker-billing-events` | `firm-bus`, `firm-metering` |
+
+**Aug 2 compliance (within Phase 3 window):** `firm-security` C2PA manifest generation interface defined and wired to `firm-ai-content` schema stub (from Phase 1). `firm-ai-content` write path to `ai_generation_log.c2pa_manifest` confirmed complete. Chaos + integration test for manifest coverage SLO (100%) activated.
+
+**Go/No-Go for Phase 4:** `firm-bus` operational (outbox worker running, events dispatching). `firm-audit` chain verified in CI integration test. `firm-tenant-config` resolves and caches correctly. `firm-worker-runtime` used by all four initial workers. ADR-004 (`firm-ai` split) resolved.
 
 ---
 
-### 2.17 `firm-config-eslint` (L0) – ✅ ready
-Shared ESLint flat config with layer boundaries, branded‑ID rule.  
-Required additions: `workers` as a named boundary type; `no-direct-fetch` rule (feature packages must route external calls through adapters); rule preventing direct writes to the CQRS read model (only `firm-bus` event handlers allowed). Deps: none.
+### Phase 4 — L6 Tier A: Delivery + AI + Priority Adapters
+
+**Goal:** Complete Tier A with delivery channels, AI infrastructure, and the first 11 adapters. Platform becomes capable of sending emails, processing payments, and generating AI content.
+
+**Hard prerequisites:** ADR-004 resolved (`firm-ai` split). `firm-ports` frozen. Phase 3 Go/No-Go passed.
+
+**Build sequence:**
+
+| Step | Package / Adapter | Key Constraints |
+|------|------------------|----------------|
+| 1 | `firm-ai` | Infrastructure only: provider routing, token counting, cost metering, model selection. No generation logic. Depends on `firm-metering.checkQuota()`. |
+| 2 | `adapters-ai-openai` | First AI adapter. Scaffolded via generator. `implements AITextPort`. |
+| 3 | `adapters-ai-anthropic` | Fallback AI adapter. |
+| 4 | `firm-ai-content` | Generation + compliance: always `pending_approval`; `approveContent()` guard; C2PA manifest generation (complete Aug 2 requirement); NY disclosure label (complete Jun 9 requirement). Depends on `firm-ai`, `firm-audit`. |
+| 5 | `adapters-storage-s3` | `firm-media` unblocked after this. |
+| 6 | `adapters-storage-r2` | Cloudflare R2 production storage. |
+| 7 | `firm-media` | Multi-provider; image/video processing; metadata stripping; `checkQuota()` enforced. Depends on storage adapters. |
+| 8 | `firm-notifications` | Email, SMS, push, in-app. Digest batching. Per-channel retry policies. Depends on `firm-template-engine`, `firm-bus`. |
+| 9 | `adapters-email-resend` | Primary email adapter. |
+| 10 | `adapters-email-sendgrid` | Fallback email adapter. |
+| 11 | `adapters-sms-twilio` | SMS channel for `firm-notifications`. |
+| 12 | `firm-webhooks` | HMAC signing; retries; delivery logs. Depends on `firm-bus`, `firm-idempotency`. |
+| 13 | `firm-sse` | Server-Sent Events. Depends on `firm-request-context`, `firm-auth`. |
+| 14 | `adapters-payments-stripe` | `firm-payments` unblocked. Financial webhook idempotency → PostgreSQL store. |
+| 15 | `adapters-crm-hubspot` | `firm-sales-pipeline` integration unblocked. |
+| 16 | `adapters-crm-gohighlevel` | Primary agency CRM. |
+| 17 | `firm-search` | Tenant isolation model confirmed by ADR before build. |
+| 18 | `firm-i18n` | ICU MessageFormat; locale-aware formatting; RTL support. |
+
+**Workers to add:**
+
+| Worker | Depends On |
+|--------|-----------|
+| `worker-email-delivery` | `firm-notifications`, `adapters-email-*` |
+| `worker-sms-delivery` | `firm-notifications`, `adapters-sms-twilio` |
+| `worker-ai-generation` | `firm-ai-content`, `firm-bus` |
+| `worker-campaigns` | `firm-bus`, `firm-notifications` |
+
+**Go/No-Go for Phase 5:** `firm-notifications` sending email and SMS end-to-end. `firm-media` storing and retrieving files. `firm-ai-content` generating content with C2PA manifests and NY disclosure labels. `firm-payments` processing Stripe webhooks with idempotency. All four delivery workers healthy. ADR-007 (`firm-workflow` condition model) resolved.
 
 ---
 
-### 2.18 `firm-config-next` (L0) – ✅ ready
-Next.js config factory: CSP, cache profiles, Turbopack.  
-Required addition: explicitly add `serverExternalPackages: ['pino', 'drizzle-orm', 'postgres']` for Next.js 15 App Router. Tests: good. Deps: none.
+### Phase 5 — L6 Tier B + C: Operations + Revenue
+
+**Goal:** Build all operations and revenue packages. Platform becomes capable of managing tenants, processing billing, running projects, and booking appointments.
+
+**Hard prerequisites:** ADR-007 resolved (`firm-workflow`). Phase 4 Go/No-Go passed.
+
+**Build sequence:**
+
+| Step | Package | Key Constraints |
+|------|---------|----------------|
+| 1 | `firm-provisioning` | Inherit-and-detach model; idempotent sagas; dry-run. Depends on `firm-bus`, `firm-audit`, `firm-tenant-config`. |
+| 2 | `firm-compliance` | Right-to-erasure sagas; Art. 30 reports; data residency assertion. Depends on `firm-provisioning`, `firm-audit`. |
+| 3 | `firm-subscriptions` | `computeUsageCharge()`; plan lifecycle; reads `firm-metering`. |
+| 4 | `firm-payments` | Stripe/Paddle/PayPal/Square; split payments; two-tier idempotency. |
+| 5 | `firm-billing` | Invoicing; revenue recognition; dunning; `SplitRule` aggregate. Depends on `firm-payments`, `firm-subscriptions`. |
+| 6 | `firm-integrations` | Unified OAuth health dashboard; proactive token refresh; `getValidToken(providerId, tenantId)`. |
+| 7 | `firm-appointments` | Round-robin; collective booking; group appointments. |
+| 8 | `firm-projects` | `ProjectTemplate` aggregate; task dependency tracking. |
+| 9 | `firm-documents` | PDF generation; e-signature; merge fields. Event contracts with `firm-sales-pipeline` and `firm-billing` defined first. |
+| 10 | `firm-sales-pipeline` | Deal pipeline; `lead.scored` event contract published to `firm-events` first. |
+| 11 | `firm-workflow` | ADR-007 drives implementation. Do not begin without merged ADR. |
+
+**Adapters to add in Phase 5:**
+
+| Adapter | Unblocks |
+|---------|----------|
+| `adapters-payments-paddle` | `firm-billing` multi-provider |
+| `adapters-accounting-quickbooks` | `firm-billing` accounting sync |
+| `adapters-accounting-xero` | `firm-billing` accounting sync |
+| `adapters-pdf-puppeteer` | `firm-documents` |
+| `adapters-calendar-google` | `firm-appointments` |
+| `adapters-calendar-outlook` | `firm-appointments` |
+| `adapters-scim-okta` | `firm-auth` enterprise provisioning |
+| `adapters-scim-azure-ad` | `firm-auth` enterprise provisioning |
+| `adapters-project-clickup` | `firm-projects` |
+| `adapters-project-asana` | `firm-projects` |
+
+**Workers to add:**
+
+| Worker | Depends On |
+|--------|-----------|
+| `worker-crm-sync` | `firm-sales-pipeline`, `adapters-crm-*` |
+| `worker-reports` | `firm-reporting` stub, `firm-bus` |
+
+**Go/No-Go for Phase 6:** `firm-provisioning` creating and destroying tenants end-to-end with saga compensation verified. `firm-billing` invoicing and dunning operational. `firm-compliance` erasure saga tested with PII anonymisation confirmed. All Tier C packages tested with ≥80% coverage. App grouping ADR resolved.
 
 ---
 
-### 2.19 `firm-config-tailwind` (L0) – ✅ ready
-Shared Tailwind safelist, content paths.  
-Required addition: provide a `v4/` export with CSS‑first configuration for Tailwind v4 breaking changes. Deps: none.
+### Phase 6 — L6 Tier D + L5 UI
+
+**Goal:** Build all 12 Tier D packages. Build the full UI layer. Platform is complete for internal use.
+
+**Hard prerequisites:** App grouping ADR resolved. Phase 5 Go/No-Go passed. `firm-testing` gaps closed (Phase 2). `firm-tokens` multi-brand output confirmed.
+
+**L5 builds (front-loaded — must complete before any app is scaffolded):**
+
+| Step | Package | Key Constraints |
+|------|---------|----------------|
+| 1 | `firm-ui` | RSC boundary declared; WCAG 2.2 AA gate active; Chromatic in CI; Storybook stories for all components before merge |
+| 2 | `firm-theme-provider` | `buildThemeVars`; `<ThemeProvider />`; dark mode; `validateThemeContrast` |
+| 3 | `firm-hooks` | Never imports from L6; `useTenantTheme` reads theme-provider context only |
+| 4 | `firm-email-templates` | All templates accept `TenantBranding` prop; `firm-template-engine` injects at send time |
+| 5 | `firm-icons` | Icon ADR resolved; `sideEffects: false` |
+
+**Tier D builds:**
+
+| Step | Package | Key Constraints |
+|------|---------|----------------|
+| 1 | `firm-reporting` | CQRS read model; `firm-kpi` integration; no direct write-model queries |
+| 2 | `firm-portal` | Per-sub-account module config; portal activity audit |
+| 3 | `firm-inbox` | All inbound channels converge; `social.dm.received` consumer |
+| 4 | `firm-cms` | `firm-sanitize` enforced on all content; multilingual locale fallback |
+| 5 | `firm-forms` | CRM field-mapping validation at publish time; `firm-sanitize` enforced |
+| 6 | `firm-landing-pages` | Consent gate before any pixel fires; A/B testing via `firm-flags` |
+| 7 | `firm-funnels` | Bounded context strictly separate from `firm-workflow`; enforced by event contracts |
+| 8 | `firm-social` | Outbound only; inbound DMs → `firm-inbox` via `social.dm.received` |
+| 9 | `firm-seo` | Keyword tracking; structured data management |
+| 10 | `firm-reputation` | Human-approval gate on all AI-suggested replies; no auto-publish path |
+| 11 | `firm-ads` | UTM management; ad fatigue detection; budget alerts |
+| 12 | `firm-ai-content` | (Full build — compliance minimums delivered in Phases 1–4) |
+
+**Remaining priority adapters (12–20) built during this phase:**
+
+`adapters-analytics-ga4`, `adapters-analytics-posthog`, `adapters-social-meta`, `adapters-ads-google`, `adapters-reviews-google-business`, `adapters-seo-semrush`, `adapters-seo-google-search-console`, `adapters-email-validation-zerobounce`
+
+**Workers to add:**
+
+| Worker | Depends On |
+|--------|-----------|
+| `worker-reputation` | `firm-reputation`, `adapters-reviews-*` |
+| `worker-analytics-rollup` | `firm-reporting`, `firm-bus` |
+| `worker-social-scheduler` | `firm-social`, `adapters-social-*` |
+
+**Go/No-Go for Phase 7:** All 12 Tier D packages tested ≥80% coverage. All L5 packages complete with Storybook stories and WCAG 2.2 AA CI gates passing. `firm-reporting` CQRS read model operational (events flowing from outbox → read model). `firm-kpi` definitions active.
 
 ---
 
-### 2.20 `firm-config-typescript` (L0) – ✅ ready
-TS config factory for app/service/library. Strict mode.  
-Verify `service` variant fully covers background workers without leaking browser API types; add `worker` variant if needed. Deps: none.
+### Phase 7 — L7 Adapters: Full Rollout
+
+**Goal:** Build remaining 85 adapters. Complete `firm-schema-registry` and `firm-db-seed`. Platform is externally complete.
+
+**Hard prerequisites:** `firm-ports` frozen. Phase 6 Go/No-Go passed. All 22 Port interfaces confirmed stable.
+
+**Build rules:**
+- All adapters produced via scaffolding generator. No exceptions.
+- Each adapter must: `implements <Port>`, lazy-init from `firm-env`, transform functions, error → `FirmError` mapping, Prometheus metrics, `verifyWebhookSignature`, `firm-circuit-breaker` wrapping, constructor-injected `getValidToken`.
+- Stub + conformance test produced simultaneously with adapter.
+- `REGISTRY.md` regenerated on every adapter merge.
+
+**Batch order:**
+
+| Batch | Categories | Count |
+|-------|-----------|-------|
+| 7A | Email (remaining), SMS (remaining), CRM (remaining) | ~12 |
+| 7B | Analytics (remaining), Observability tags, Experimentation | ~7 |
+| 7C | Video, Video conferencing, Chat | ~10 |
+| 7D | Accounting (remaining), Payments (remaining), Tax calculation | ~8 |
+| 7E | Proposals, Project management (remaining), Design | ~9 |
+| 7F | Booking systems (remaining), Calendar (remaining) | ~5 |
+| 7G | Telephony, Voice AI, Voicemail drop, Speech-to-text | ~13 |
+| 7H | Messaging/WhatsApp, Push notifications, Translation | ~9 |
+| 7I | iPaaS, E-commerce, Team communication, Data enrichment | ~13 |
+| 7J | Map listings, Email validation (remaining), Local storage | ~7 |
+| TBD | Fraud detection, Identity verification, AI video, TTS, Link shortener | TBD |
+
+**Also in Phase 7:**
+- `firm-schema-registry`: breaking-change detection gate; consumer tracking; `generateContractArtifacts` producing committed `contracts/v1/` artifacts
+- `firm-db-seed`: deterministic three-tier hierarchy seed data; `clearTenant` teardown; required for Phase 8 integration scenarios
+
+**Go/No-Go for Phase 8:** 105/105 adapters built, stubbed, and conformance-tested. `REGISTRY.md` current. `contracts/v1/` artifacts committed and CI-verified. `firm-db-seed` seeding all three tiers deterministically.
 
 ---
 
-### 2.21 `firm-testing` (testing) – ✅ ready (expanding scope)
-*(Renamed from `firm-test-utils`.)* Mock factories, random data generators.  
-Expanded scope in Phase 1: PGLite harness (in‑memory Postgres for integration tests), ioredis‑mock, `createUnitHarness()`, `createIntegrationHarness()`, `createE2eHarness()`.  
-Required additions: `createTenantIsolationFixture()` (two‑tenant setup with cross‑visibility assertion helpers – needed by every L6 package), `mockAdapter<T extends Port>(port)` (type‑safe mock for any Port interface), `createOutboxHarness()` (captures outbox events without real DB transactions).  
-Deps: none.
+### Phase 8 — Apps + E2E + Load + Chaos
+
+**Goal:** Scaffold and build all platform applications. Run full E2E, load, and chaos test suites. Platform is production-ready.
+
+**Hard prerequisites:** App grouping ADR resolved. Phase 7 Go/No-Go passed.
+
+**App scaffolding:**
+
+Based on app grouping ADR outcome (default: 3–5 hybrid apps):
+
+| Hybrid App (default grouping) | Contains |
+|-------------------------------|---------|
+| `platform-marketing` | landing-pages, funnels, forms, social, ads, seo, reputation, cms |
+| `platform-operations` | crm, projects, documents, appointments, proposals, inbox, portal |
+| `platform-revenue` | billing, invoicing, subscriptions, payments |
+| `platform-analytics` | reporting, analytics |
+| `platform-admin` | admin, storybook |
+
+> If ADR resolves to 22 separate apps or single unified app, scaffolding follows that outcome exactly.
+
+**E2E suite (Playwright):**
+- Auth flow (login, MFA, session expiry, API key)
+- Tenant isolation (cross-tenant access attempt → 403)
+- Lead creation → outbox → email delivery end-to-end
+- Consent gate (GPC → no marketing scripts in HTML)
+- AI content → approval gate → publish
+- Billing → payment → invoice generated
+- GDPR erasure → PII anonymised → hard delete after retention
+
+**Load tests (k6 — `load-tests/`):**
+- Tenant isolation under concurrent requests (50 tenants, 100 req/s each)
+- Outbox throughput (target: 10,000 events/min end-to-end latency <60s)
+- Rate limiting accuracy (sliding window, token bucket refill under burst)
+- Lead creation burst (10,000 leads/min, zero duplicates, zero lost events)
+
+**Chaos tests (Toxiproxy — `chaos/`):**
+- Redis failure → rate limiter fails open; cache degrades gracefully
+- Outbox worker crash + recovery → zero event loss confirmed
+- PgBouncer eviction → tenant isolation holds; RESET wrapper confirmed working. **Must pass before any EU client is onboarded.**
+- Adapter timeout + retry exhaustion → dead-letter queue routing confirmed
+
+**Runbooks required** (each chaos scenario requires its runbook in `docs/runbooks/` before the test is executed):
+- `connection-pooler-rls.md`
+- `outbox-worker-recovery.md`
+- `redis-failure-degraded-mode.md`
+- `adapter-timeout-dlq.md`
+
+**Production readiness checklist (all must be true before first client onboarded):**
+
+- [ ] All six SLOs defined in `docs/slos/` with Grafana alerts and runbooks
+- [ ] PgBouncer eviction chaos test passed and reviewed
+- [ ] `SECURITY.md` reviewed by `@firm/security`
+- [ ] GDPR erasure saga tested end-to-end in staging
+- [ ] All four compliance deadlines confirmed closed (Jun 9, Jun 15, Jul 14, Aug 2)
+- [ ] `sbom/` CycloneDX SBOMs generated in CI and archived
+- [ ] `contracts/v1/` artifacts committed and verified
+- [ ] All workers: graceful shutdown tested under load
+- [ ] Readiness probe passes on clean deploy with no manual intervention
+- [ ] Synthetic smoke tests passing for ≥24 hours in staging
+
+
+**Runtime guarantees (provided by `firm-worker-runtime`):**
+- Graceful `SIGTERM` drain — in-flight jobs complete before shutdown; new jobs rejected
+- K8s readiness (`/health/readiness`) and liveness (`/health/liveness`) HTTP endpoints
+- Worker-level Prometheus metrics exported at `/metrics`
+- Uncaught exception → `firm-logger` structured error + graceful restart signal
+- Startup dependency check (DB reachable, Redis reachable) before accepting first job
+- `withRequestContext()` called on every job — `tenantId` and `traceId` present in all logs and spans
+
+### E.3 Complete Workers Inventory
+
+| # | Worker | Phase Built | Primary Dependencies | Primary Responsibility |
+|---|--------|-------------|---------------------|----------------------|
+| 1 | `worker-outbox-processor` | Phase 3 | `firm-bus`, `firm-events`, `firm-idempotency` | Poll `outbox_events`; dispatch to registered handlers; retry with exponential backoff; dead-letter on max attempts |
+| 2 | `worker-tenant-provisioning` | Phase 3 | `firm-bus`, `firm-tenant-config`, `firm-provisioning` | Execute tenant provision/deprovision sagas; inherit-and-detach model; compensation on failure |
+| 3 | `worker-data-retention` | Phase 3 | `firm-bus`, `firm-compliance`, `firm-audit` | GDPR retention clock; hard-delete after window; write completion record to `firm-audit` |
+| 4 | `worker-billing-events` | Phase 3 | `firm-bus`, `firm-metering`, `firm-billing` stub | Aggregate meter events; flush Redis counters to DB; trigger invoice generation signals |
+| 5 | `worker-email-delivery` | Phase 4 | `firm-notifications`, `adapters-email-resend`, `adapters-email-sendgrid` | Send transactional and campaign emails; per-channel retry policy; digest aggregation |
+| 6 | `worker-sms-delivery` | Phase 4 | `firm-notifications`, `adapters-sms-twilio` | Send SMS notifications; rate-limit enforcement per tenant per provider |
+| 7 | `worker-ai-generation` | Phase 4 | `firm-ai-content`, `firm-bus`, `adapters-ai-openai`, `adapters-ai-anthropic` | Process AI generation jobs; enforce human-approval gate; write C2PA manifest; emit `ai.content.generated` event |
+| 8 | `worker-campaigns` | Phase 4 | `firm-bus`, `firm-notifications`, `firm-leads` | Execute campaign sends; audience segmentation; delivery scheduling; unsubscribe processing |
+| 9 | `worker-crm-sync` | Phase 5 | `firm-sales-pipeline`, `adapters-crm-hubspot`, `adapters-crm-gohighlevel` | Bidirectional CRM sync; conflict resolution; field mapping; sync health monitoring |
+| 10 | `worker-reports` | Phase 5 | `firm-reporting`, `firm-bus`, `firm-media` | Pre-compute report aggregates; write to CQRS read model; generate scheduled PDF/email reports |
+| 11 | `worker-reputation` | Phase 6 | `firm-reputation`, `adapters-reviews-google-business`, `adapters-reviews-trustpilot` | Poll review platforms; ingest new reviews; trigger AI reply suggestions (pending human approval) |
+| 12 | `worker-analytics-rollup` | Phase 6 | `firm-reporting`, `firm-bus`, `adapters-analytics-ga4` | Roll up raw analytics events into period aggregates; feed `firm-kpi` calculations |
+| 13 | `worker-social-scheduler` | Phase 6 | `firm-social`, `adapters-social-meta`, `adapters-social-linkedin` | Execute scheduled social posts; handle publish failures; update post status; emit `social.post.published` events |
+
+### E.4 Worker Build Rules
+
+1. **`firm-worker-runtime` first** — no worker is scaffolded until `firm-worker-runtime` is complete and tested (Phase 3, Step 1).
+2. **No direct feature package imports** — workers receive jobs via `firm-bus` event dispatch or a job queue. They call feature packages to execute business logic, never contain it.
+3. **Tenant context mandatory** — `withRequestContext({ tenantId, traceId })` must wrap every job handler. A worker that processes a job without tenant context fails the RLS coverage test and CI gate.
+4. **Dead-letter routing** — every worker that handles outbox events must define a dead-letter handler. Silently dropping failed events is not permitted.
+5. **Adapter injection, not direct import** — workers receive adapter instances via constructor injection from `firm-bus` configuration, not by importing adapter packages directly. This keeps workers decoupled from provider changes.
 
 ---
 
-### 2.22 `firm-tokens` (L0/5) – ✅ ready
-W3C DTCG design tokens → CSS custom properties, TS constants. Build‑time only.  
-Enforcement risk: add `no-runtime-tokens-import` ESLint rule – prevents direct token imports at runtime, enforcing CSS custom property usage for theming. Deps: none.
+## §F Open ADR Summary
+
+The authoritative ADR detail is in **Critique Part 11**. This section provides a reference table: what each ADR is, what phase it blocks, and the default recommendation to apply if the ADR has not yet been resolved.
+
+### F.1 ADRs That Block Roadmap Validity — Write Immediately
+
+These four ADRs have cascading impact on package structure, build order, and the implementation roadmap. Until they are resolved the corresponding phases are provisional.
+
+| ADR | Decision Required | Blocks | Default (working assumption) |
+|-----|------------------|--------|------------------------------|
+| **ADR-001** | `firm-bus` execution model: custom outbox-only vs. Inngest durable execution | Phase 3 start; `firm-bus`, `firm-webhooks`, `firm-notifications`, all workers provisional | **Custom outbox only.** Re-evaluate at 50+ tenants. Remove `inngest` from pnpm catalog if confirmed. |
+| **ADR-002** | `apps/platform/` grouping: 22 separate apps vs. 3–5 hybrid apps vs. single unified app | Phase 8 scaffolding; deployment pipelines; Vercel project limits | **3–5 hybrid apps** (marketing, operations, revenue, analytics, admin). |
+| **ADR-003** | `firm-db` split + read model home: `firm-db-read` as separate package vs. subdirectory in `firm-db-schema` | Phase 2 start; `firm-db-read`, CQRS read model, `firm-reporting` | **Separate `firm-db-read` package.** Independent migration cycles, separate connection pool. |
+| **ADR-004** | `firm-ai` split interface boundary: exact contract between `firm-ai` (infra) and `firm-ai-content` (generation + compliance) | Phase 4 `firm-ai-content` build; Jun 9 + Aug 2 compliance deadlines | **`firm-ai` exposes `generate(prompt, options)` + `checkQuota()` only.** `firm-ai-content` owns all compliance wrapping. |
+
+### F.2 ADRs That Block Phase 2 Start
+
+These six ADRs govern feature package architecture. Must be resolved before corresponding Tier A packages exit prototyping.
+
+| ADR | Decision Required | Blocks | Default |
+|-----|------------------|--------|---------|
+| **ADR-005** | `firm-types` shared kernel boundary: single package vs. domain-split vs. hybrid (core types + feature-colocated contracts) | Phase 2 `firm-types` surgery; all domain branded ID locations | **Hybrid:** lean `firm-types` shared kernel + domain-specific contracts colocated with feature packages over time |
+| **ADR-006** | `firm-workflow` condition model: expression language (JSONLogic, CEL), state machine library (XState, custom), trigger types, compensation model | Phase 5 `firm-workflow` build | **Defer until Phase 4 exit.** Do not begin `firm-workflow` implementation without a merged ADR. |
+| **ADR-007** | `firm-search` tenant isolation model: external index partitions (Algolia, Typesense per-tenant index) vs. PostgreSQL RLS + full-text | Phase 4 `firm-search` build | **PostgreSQL full-text search + RLS** for launch; re-evaluate at 100k documents per tenant |
+| **ADR-008** | `firm-bus` ADR-001 dependency — `firm-webhooks` delivery model: outbox-backed vs. direct HTTP with retry queue | Phase 4 `firm-webhooks` build | **Outbox-backed.** Consistent with ADR-001 default. |
+| **ADR-009** | `firm-telemetry-client` / RUM browser-Node bundling conflict | Phase 2 `firm-observability` RUM sub-export; Phase 8 app instrumentation | **`@firm/observability/rum` sub-export with `react-server` condition guard.** Re-evaluate before Phase 8. |
+| **ADR-010** | `apps/clients/` generation model: ephemeral at deploy time vs. committed generated source | Phase 8 client app scaffolding | **Ephemeral generation at deploy time.** `_template/` and `config/<slug>.json` committed; generated output is not. |
+
+### F.3 ADRs That Block Phase 3+
+
+These two ADRs are lower urgency but must be resolved before the phases they affect begin.
+
+| ADR | Decision Required | Blocks | Default |
+|-----|------------------|--------|---------|
+| **ADR-011** | `firm-ui` icon isolation: dedicated `firm-icons` package vs. `@firm/ui/icons` sub-export with `sideEffects: false` | Phase 6 `firm-ui` build | **`@firm/ui/icons` sub-export.** Avoids a new package for a pure tree-shaking concern. |
+| **ADR-012** | `firm-alerting` — alert rules as TypeScript generating Prometheus YAML, or direct YAML in `infra/` | Phase 5+ SLO alerting | **Direct YAML in `infra/`** for launch. TypeScript generation is a Phase 7 enhancement. |
+
+### F.4 ADR Process
+
+1. **Propose:** Open issue using `.github/ISSUE_TEMPLATE/adr-proposal.md`. State the problem, options, trade-offs, and a default recommendation.
+2. **Review:** Architecture reviewer approval required. ADRs blocking Phase 1 or Phase 2 require two reviewers.
+3. **Merge:** ADR document merged to `docs/adr/ADR-NNN-<slug>.md`. Status set to `Accepted`.
+4. **Implement:** Blueprint and Assessment updated in the same PR that merges the ADR.
+5. **Supersede:** A new ADR references the old one and sets its status to `Superseded`. Prior decisions are never deleted.
 
 ---
 
-### 2.23 `firm-rate-limiter` (L3) – ❌ not built
-*(New package – extracted from `firm-security` during Phase 1.)*  
-Intent: Redis sliding window per named policy, token bucket for expensive operations (AI generation, file uploads), plan‑tier‑aware limits (values from `firm-flags` or `firm-subscriptions`, never inline), dry‑run mode (`RateLimitPolicy.dryRun: true` – records would‑block events without blocking, for production tuning), fail‑open when Redis unreachable (logged and alerted, never throws).  
-Deps: `@firm/cache`, `@firm/env`. Tests: must include dry‑run behaviour and Redis‑unreachable graceful degradation. **Fix 2b.**
+## §G Six Service Level Objectives
+
+The six SLOs define the hard platform guarantees. Each is documented in full in `docs/slos/` including measurement method, alert linkage, and on-call response procedure. Breaches trigger the corresponding runbook.
+
+| SLO | Target | Window | Grafana Alert | Runbook |
+|-----|--------|--------|--------------|---------|
+| **Tenant Isolation** | 100% — zero cross-tenant queries | Continuous (per-request) | `RLSHealthCheckFailed`, `CrossTenantQueryDetected` | `docs/runbooks/rls-violation.md` |
+| **Event Delivery** | 99.99% — outbox events delivered within 10 minutes | 30-day rolling | `OutboxDLQOverflow` | `docs/runbooks/outbox-worker-recovery.md` |
+| **API Availability** | 99.9% — platform API returns non-5xx | 30-day rolling | Dashboard threshold | `docs/runbooks/api-degraded.md` |
+| **Rate Limiter Fail-Open** | 100% — rate limiter failures allow requests (never block) | Per-event | Warning alert + chaos test linkage | `docs/runbooks/redis-failure-degraded-mode.md` |
+| **AI Generation Latency** | p95 < 15 seconds | 7-day rolling | AI cost dashboard threshold | `docs/runbooks/ai-generation-latency.md` |
+| **Compliance Manifest Coverage** | 100% — every AI-generated asset has a C2PA manifest | Per-generation | Missing manifest warning | `docs/runbooks/c2pa-manifest-missing.md` |
+
+**Alert severity tiers:**
+
+| Tier | Criteria | Response |
+|------|----------|----------|
+| 🔴 Critical | Tenant isolation breach; outbox DLQ overflow; API availability below 99% | Page on-call immediately; incident channel opened; rollback triggered |
+| 🟠 High | API availability 99–99.9%; AI latency p95 >15s; missing C2PA manifest | Page on-call within 15 minutes; runbook executed |
+| 🟡 Warning | Outbox lag >5 minutes; rate limiter Redis unreachable; adapter error rate elevated | Triage during business hours; runbook referenced |
 
 ---
 
-### 2.24 Critical Missing Adapters (Day‑One Development Unblockers)
+## §H Repository Checklist — Files and Directories
 
-The following adapter packages do not exist but are required to unblock local development and core feature work. They are listed here because their absence is a development velocity blocker, not just a future milestone.
+The following files and directories must exist before Phase 8 begins. Items marked 🔴 must exist before Phase 1 begins. Items marked 🟠 must exist before Phase 3 begins.
 
-| Package | Layer | Status | Blocks |
-|---------|-------|--------|--------|
-| `adapter-storage-local` | 7 | ❌ not built | All local development for media features – without it, developers need real S3/R2 credentials |
-| `adapter-pdf-generator-puppeteer` | 7 | ❌ not built | `firm-documents` – no PDF generation without this |
-| `adapter-ai-image-openai` | 7 | ❌ not built | `firm-ai-content` image generation |
-| `adapter-videoconferencing-zoom` | 7 | ❌ not built | `firm-appointments` – cannot attach video links to bookings |
-| `adapter-email-validation-zerobounce` | 7 | ❌ not built | Bulk email campaigns will accumulate bounces without email validation |
+### Root Files
 
-**`adapter-storage-local` is the single highest‑ROI adapter build** – it unblocks local development for every media‑touching feature and can be written in under an hour. It must be created in Phase 1.
+| File | Required By | Status |
+|------|-------------|--------|
+| `CLAUDE.md` | Phase 0 | ✅ Present |
+| `AGENTS.md` | Phase 0 | ✅ Present |
+| `SECURITY.md` | 🔴 Phase 1 | Must be created |
+| `CONTRIBUTING.md` | 🔴 Phase 1 | Must be created |
+| `turbo.json` | Phase 0 | ✅ v2 schema (`tasks:{}`) confirmed |
+| `pnpm-workspace.yaml` | Phase 0 | ✅ Named catalogs confirmed |
+| `.npmrc` | Phase 0 | ✅ `catalog-mode=strict`, `minimumReleaseAge=1440`, `blockExoticSubdeps=true` |
+| `.nvmrc` | Phase 0 | Must be `22.x` |
+| `tsconfig.json` | Phase 0 | ✅ Solution file referencing all packages |
 
----
+### Directories
 
-### 2.25 Summary of Broken/Blocked/New Packages
-
-**Broken (compilation fails or critical logic error):**
-- `firm-primitives` – not extracted
-- `firm-logger` – split‑brain context bug
-- `firm-validators` – campaign imports, lead migration bugs
-- `firm-security` – rate limiter import bug (will be partially resolved by extraction)
-
-**Blocked (depends on a broken package):**
-- `firm-auth` – blocked by `firm-security` Fix 2a/2b
-
-**New packages decided and required before Phase 2:**
-- `firm-rate-limiter` (L3) – extracted from `firm-security`
-- `firm-db-schema` (L2) – split from `firm-db`
-- `firm-db-client` (L2) – split from `firm-db`
-- `adapter-storage-local` (L7) – unblocks all local media development
-
-**Design changes propagated to Blueprint:**
-- `firm-ai` split into `firm-ai` (infra) + `firm-ai-content` (generation + compliance)
-- `firm-test-utils` → `firm-testing` (rename + expanded scope)
-- `firm-pipeline` → `firm-sales-pipeline` (future L6, rename reflected in plans)
-
----
-
-## Section 3: Cross‑Package Dependency Matrix (Post‑Phase 1 Target State)
-
-This matrix describes the import relationships **after** all Phase 1 critical fixes are applied, `firm-rate-limiter` is extracted as a standalone Layer 3 package, and `firm-db` is split into `firm-db-schema` (L2, lightweight) and `firm-db-client` (L2, connection‑heavy). A `✅` indicates an allowed and correctly implemented direct import (lower or same layer). A blank cell means no direct import. No `⚠️` edges should remain—the Phase 1 fix sequence is designed to resolve every broken edge identified in the current Assessment.
-
-**Note:** The matrix will be regenerated from actual `package.json` files after the split and extraction are physically completed. This version serves as the architectural target for Phase 1 verification.
-
-| Imported ↓ → Importer | firm‑prim | firm‑types | firm‑utils | firm‑errors | firm‑crypto | firm‑logger | firm‑req‑ctx | firm‑env | firm‑validators | firm‑api‑ctr | firm‑db‑schema | firm‑db‑client | firm‑cache | firm‑rate‑limiter | firm‑security | firm‑auth | firm‑consent | firm‑observ | firm‑health |
-|----------------------|-----------|------------|------------|-------------|-------------|-------------|--------------|----------|-----------------|--------------|----------------|----------------|------------|-------------------|---------------|-----------|--------------|-------------|------------|
-| `firm‑primitives` | – | | | | | | | | | | | | | | | | | | |
-| `firm‑types` | ✅ | – | | | | | | | | | | | | | | | | | |
-| `firm‑utils` | ✅ | | – | | | | | | | | | | | | | | | | |
-| `firm‑errors` | ✅ | | | – | | | | | | | | | | | | | | | |
-| `firm‑crypto` | | | | | – | | | | | | | | | | | | | | |
-| `firm‑logger` | | | | | | – | ✅ | | | | | | | | | | | | |
-| `firm‑req‑ctx` | ✅ | | | | | | – | | | | | | | | | | | | |
-| `firm‑env` | | | | | | | | – | | | | | | | | | | | |
-| `firm‑validators` | ✅ | ✅ | | | | | | | – | | | | | | | | | | |
-| `firm‑api‑ctr` | ✅ | ✅ | | | | | | | ✅ | – | | | | | | | | | |
-| `firm‑db‑schema` | ✅ | ✅ | | | | | | | | | – | | | | | | | | |
-| `firm‑db‑client` | ✅ | ✅ | | | | | ✅ | | | | ✅ | – | | | | | | | |
-| `firm‑cache` | | | | | | | | | | | | | – | | | | | | |
-| `firm‑rate‑limiter` | | | | | | | | ✅ | | | | | ✅ | – | | | | | |
-| `firm‑security` | ✅ | | | ✅ | ✅ | | | | | | | | | | – | | | | |
-| `firm‑auth` | ✅ | ✅ | | ✅ | ✅ | | ✅ | | ✅ | | | ✅ | ✅ | ✅ | ✅ | – | | | |
-| `firm‑consent` | ✅ | | | ✅ | ✅ | | | | | | | | | | | | – | | |
-| `firm‑observ` | | | | | | ✅ | ✅ | | | | | | | | | | | – | |
-| `firm‑health` | | | | | | | | | | | | ✅ | | | | | | ✅ | – |
+| Directory | Required By | Contents |
+|-----------|-------------|---------|
+| `.github/ISSUE_TEMPLATE/` | 🔴 Phase 1 | `bug-report.md`, `feature-request.md`, `adr-proposal.md`, `security-vulnerability.md` |
+| `docs/adr/` | 🔴 Phase 1 | All resolved ADRs; `ADR-000-template.md` |
+| `docs/slos/` | 🟠 Phase 3 | Six SLO definition files |
+| `docs/runbooks/` | 🟠 Phase 3 | One runbook per Grafana critical/high alert |
+| `docs/compliance/` | 🟠 Phase 3 | `data-residency.md`; per-deadline compliance records |
+| `contracts/v1/` | Phase 7 | `openapi.json`, `asyncapi.yaml`, `events.schema.json` — generated and committed |
+| `load-tests/` | Phase 8 | k6 scenarios, thresholds, baseline results |
+| `chaos/` | Phase 8 | Toxiproxy scenarios, playbooks — PgBouncer eviction required pre-EU-onboarding |
+| `policies/` | Phase 7 | Reserved for OPA Rego policies; `README.md` explains migration trigger |
+| `tools/catalog/` | Phase 7 | Generated static service catalog (developer portal MVP) |
+| `sbom/` | Phase 8 | CycloneDX SBOMs generated in CI and archived |
+| `stubs/` | Phase 4 | Auto-generated adapter stubs; not hand-authored |
+| `workers/` | 🟠 Phase 3 | Renamed from `services/` |
+| `infra/` | 🟠 Phase 3 | Regional subdirectories: `us-east-1/`, `eu-west-1/`; Prometheus, Grafana, Loki, Tempo configs |
 
 ---
 
-### Notes on Structural Changes
+## §I CI Pipeline — Current vs. Target Gate State
 
-1. **`firm‑db‑schema` and `firm‑db‑client` replace `firm‑db`.** Packages that only need schema types (e.g., `firm‑validators` for `satisfies` checks) will import `firm‑db‑schema`—lightweight, zero runtime deps beyond Drizzle. Packages that need database connections (e.g., `firm‑auth` for session queries, `firm‑health` for RLS probes) import `firm‑db‑client`. This eliminates the previous fan‑out where every consumer of `firm‑db` pulled in connection pools and `postgres` unnecessarily.
+The 21-gate CI pipeline is defined in **Blueprint §4.8**. This section tracks which gates are currently active, which require new work to activate, and which phase they become mandatory.
 
-2. **`firm‑rate‑limiter` is a new Layer 3 package.** `firm‑security` no longer contains rate‑limiting logic; it depends only on `firm‑primitives`, `firm‑errors`, and `firm‑crypto` for CSP/CSRF/Turnstile/headers. `firm‑auth` now directly depends on `firm‑rate‑limiter` for MFA and API key rate limiting, and on `firm‑cache` for session storage—both dependencies are now explicit and clean.
+| Gate | Name | Currently Active | Requires | Mandatory From |
+|------|------|-----------------|----------|---------------|
+| 1 | Supply-Chain Security | ✅ `npm audit` + license scanner | — | Phase 0 |
+| 2 | Boundary Check | ✅ ESLint `boundaries` + `no-direct-fetch` + `no-direct-read-model-write` | Add `dep-fence` (Action X2) | Phase 1 |
+| 3 | Type Check | ✅ `tsgo --noEmit` strict | — | Phase 0 |
+| 4 | Lint | ✅ ESLint style + imports | Add `no-runtime-tokens-import` rule (Phase 2) | Phase 0 |
+| 5 | Adapter Scaffolding Verification | ❌ not active | Requires first adapter scaffold to validate template against | Phase 4 |
+| 6 | Unit & Integration Tests | ✅ Vitest | Confirm ≥80% threshold in `firm-config-vitest` per-package | Phase 0 |
+| 7 | Event Registry Check | ❌ not active | Requires `firm-events` + `EventRegistry` (Phase 2) | Phase 3 |
+| 8 | Event Versioning Check | ❌ not active | Requires `firm-events` (Phase 2) | Phase 3 |
+| 9 | Event Schema Validation | ❌ not active | Requires `firm-events` + Zod schemas (Phase 2) | Phase 3 |
+| 10 | RLS Coverage Check | ⚠️ partial | `firm-health` RLS probe present; `rlsHealthCheck()` needs `observabilityHealthCheck()` wired (Fix 7) | Phase 1 |
+| 11 | RLS Sibling Test | ⚠️ partial | PgBouncer RESET wrapper (Fix 8) required for full trust | Phase 1 |
+| 12 | RLS Parent Test | ⚠️ partial | Same as Gate 11 | Phase 1 |
+| 13 | Adapter Interface Compliance | ❌ not active | Requires `firm-ports` frozen (Phase 2) + first adapter | Phase 4 |
+| New1 | Quota Check Enforcement | ❌ not active | Requires `firm-metering.checkQuota()` (Fix 10) + static-analysis script | Phase 1 |
+| 14 | PII Redaction Test | ⚠️ partial | Log capture exists; Sentry filter validation not confirmed | Phase 1 |
+| 15 | Feature Flag Expiration | ❌ not active | Requires `firm-flags` (Phase 3) | Phase 3 |
+| 16 | Tag Registry Integrity | ⚠️ partial | `TagRegistry` present; SRI hash CI verification not confirmed | Phase 2 |
+| 17 | Observability Instrumentation | ❌ not active | Requires `firm-observability` ESM loader hook confirmed (Phase 2) | Phase 3 |
+| 18 | Package `exports` Verification | ❌ not active | Action X3 (Phase 1) | Phase 1 |
+| 19 | AsyncAPI Generation | ❌ not active | Requires `firm-events` + `generateAsyncApiDocument` (Phase 2) | Phase 3 |
+| 20 | Schema Build | ❌ not active | Requires `firm-schema-registry` + `contracts/v1/` pipeline (Phase 7) | Phase 7 |
+| 21 | Build | ✅ `tsdown` via Turborepo dual-pass | — | Phase 0 |
 
-3. **`firm‑auth → firm‑security` remains a direct dependency** because `firm‑auth` consumes `firm‑security`’s CSRF and security headers middleware. This edge is healthy—it was only broken previously because `firm‑security` couldn’t be instantiated due to the rate‑limiter bug. Fix 2a resolves that and Fix 2b removes the rate‑limiter code from `firm‑security`, leaving a stable, importable package.
+**Gate activation targets by phase:**
 
-4. **`firm‑env` is imported by `firm‑rate‑limiter`** to allow environment‑aware configuration (e.g., relaxed limits in development, full enforcement in production) without hardcoding environment checks inside the policy engine.
-
-5. **`firm‑health → firm‑observability` is added** because the observability health check (OTel initialised, spans exporting) requires querying the OTEL SDK, which lives in `firm‑observability`. Both are Layer 4, so this same‑layer import is permitted.
-
-6. **All previously `⚠️` edges are resolved.** The matrix shows the clean state that must be verified at the end of Phase 1. No package imports from a layer above its own, no circular dependencies, no missing exports.
-
----
-
-## Section 4: Testing Coverage Audit & Gaps
-
-**Legend:** `P#`=Priority (1=highest risk). `Fix N` refers to §7.1 critical fix.
-
----
-
-### 4.1 Priority‑Ordered Test Gaps
-
-| P | Package | Gap | Risk | Fix |
-|---|---------|-----|------|-----|
-| 1 | `firm-request-context` | **0% tests** – no context storage, propagation, or middleware tests; also has `[key: string]: any` design flaw that needs module augmentation | Critical – tenant scoping, traces, audit | Fix 6 |
-| 2 | `firm-validators` | Schemas broken (campaign imports, lead migration); no tests for lead/tenant/user/campaign; missing factory tests for `createPaginationSchema`, `createTenantScopedSchema`, `createVersionedSchema` | High – blocks all feature validation | Fix 4 |
-| 3 | `firm-security` | RateLimiter untestable (broken import); Turnstile, headers middleware, tag registry, audit logger untested | High – security functions unverified | Fix 2a |
-| 4 | `firm-rate-limiter` | **Not yet built** – Redis sliding window, token bucket, plan‑tier‑aware limits, dry‑run mode, fail‑open behaviour must all be tested before Phase 2 | High – new L3 package; blocks `firm-auth` rate‑limited endpoints | Fix 2b |
-| 5 | `firm-logger` | Split‑brain context divergence (no test for concurrent async correctness) | High – logs/spans may attach wrong tenant/trace | Fix 9 |
-| 6 | `firm-observability` | Tracing helpers, `withTenantSpan`, `captureError`, context propagation, metrics, `initializeObservability` untested | High – production debugging blind; tenant‑labeled metrics unavailable | Fix 7 |
-| 7 | `firm-metering` | **`checkQuota()` enforcement logic untested** – quota rejection, 80% warning event, usage summary queries | High – billing accuracy, platform cost protection | New (Phase 1) |
-| 8 | `firm-health` | Missing observability health check (OTel init + span export verification); synthetic runner error recovery untested | Medium – three‑pillar requirement unenforced | Fix 10 |
-| 9 | `firm-cache` | Key factory, tag manager, connection pool, `acquireLock`, `warmCache` untested; only JSON parsing test exists | Medium – cross‑tenant cache collisions risk; distributed lock bugs affect all workers | Fix 1 |
-| 10 | `firm-primitives` | Gatekeeper functions (`asTenantId`, etc.) untested (package not yet extracted) | Low – simple UUID validation | Fix 8 |
-| 11 | `firm-api-contracts` | tRPC route schemas, OpenAPI generation, `deprecateEvent` sunset enforcement untested | Low – derived from schemas, regressions unlikely | – |
-
----
-
-### 4.2 Missing Test Infrastructure (New Category)
-
-These are not per‑package gaps but missing test capabilities that span the entire platform. They are required to validate the three hard platform guarantees: (1) no event ever silently lost, (2) tenant isolation holds under failure, (3) rate limiter fails open when Redis is unreachable.
-
-| P | Capability | Tool | Status | Blocks |
-|---|-----------|------|--------|--------|
-| 1 | **Load testing** | k6 (TypeScript‑native, Grafana‑integrated) | `load-tests/` directory not created; no scenarios written | Cannot verify outbox throughput, API rate‑limit holding, or lead‑creation p95 latency under concurrent load before `firm-bus` and `firm-db-client` go production‑ready |
-| 1 | **Chaos testing** | Toxiproxy (network‑level failure injection) | `chaos/` directory not created; no scenarios written | Cannot verify Redis‑down rate‑limiter fail‑open, outbox worker crash exactly‑once delivery, PgBouncer eviction cross‑tenant leak safety – the PgBouncer scenario is the highest‑severity vulnerability and must be executed before any EU client is onboarded |
-| 2 | **`firm-config-k6`** | Layer 0 config package for k6 (shared base URLs, auth fixtures, ramp‑up profiles) | Not created | All load test scenarios will duplicate configuration; follows the existing Layer 0 config pattern and must be created with `load-tests/` |
-
-**`load-tests/` and `chaos/` are Phase 1 deliverables** – they must be structured and have at minimum the PgBouncer eviction, Redis‑down, and outbox‑throughput scenarios written and passing before Phase 2 infrastructure packages are marked complete.
+- **Phase 1:** Gates 2 (full), 10–12 (full), New1, 14 (full), 18
+- **Phase 2:** Gate 16 (full), Gate 19 prerequisite
+- **Phase 3:** Gates 7–9, 15, 17, 19
+- **Phase 4:** Gates 5, 13
+- **Phase 7:** Gate 20
 
 ---
 
-### 4.3 Coverage Summary by Package (Quick Reference)
+## §J Glossary of Assessment-Specific Terms
 
-✅ **Good coverage (≥80%):** `firm-utils`, `firm-errors`, `firm-crypto`, `firm-env`, `firm-auth`, `firm-consent`, `firm-health` (existing probes), `firm-config-next`
+Terms used specifically in this document that are not defined in Blueprint §6.1.
 
-⚠️ **Partial / needs work:** `firm-logger` (good except split‑brain), `firm-security` (partial, blocked rate‑limiter tests), `firm-observability` (minimal), `firm-cache` (minimal), `firm-api-contracts` (partial), `firm-db` (good, but split will require restructured tests)
+**drizzle-zod bridge** — The pattern of using `drizzle-zod`'s `createInsertSchema(table)` and `createSelectSchema(table)` to derive Zod schemas directly from Drizzle table definitions, making the Drizzle table the single structural source of truth. `firm-validators` adds only `.refine()` business rules on top. Eliminates the dual source of truth that caused all four documented `firm-validators` bugs.
 
-❌ **Broken / untested:** `firm-request-context` (0%), `firm-validators` (compilation fails), `firm-primitives` (not extracted), `firm-rate-limiter` (not built)
+**Go/No-Go criteria** — The explicit list of conditions that must all be true before the next phase begins. Used at the end of each phase section in §D. Serves as the phase completion gate — not a suggestion, a hard prerequisite.
 
----
+**Phase 0** — A named pre-phase before Phase 1. Its sole purpose is building the six missing Layer 1 packages (`firm-id`, `firm-date`, `firm-sanitize`, `firm-invariant`, `firm-circuit-breaker`, `firm-codec`). Phase 0 exists because `firm-id` and `firm-date` decisions are irreversible once any table is created.
 
-### 4.4 Alignment with Critical Fixes and New Phase 1 Deliverables
+**Priority adapter queue** — The ordered list of the first 20 adapters to build, defined in §A.7. Order is determined by which feature packages they unblock, not by provider popularity.
 
-| Fix | Package | Test Deliverable |
-|-----|---------|-----------------|
-| Fix 1 | `firm-cache` | Unit tests for TTL validation, key factory, tag manager, `acquireLock`, `warmCache` |
-| Fix 2a | `firm-security` | Unblocks RateLimiter instantiation tests; CSP/CSRF/headers middleware tests |
-| Fix 2b | `firm-rate-limiter` | New package – sliding window, token bucket, dry‑run, fail‑open, plan‑tier‑aware limits |
-| Fix 3 | `firm-auth` | Session type guards, impersonation removal verification, audit logger fallback alert test |
-| Fix 4 | `firm-validators` | Full entity schema tests; migration tests; factory function tests |
-| Fix 5 | `firm-db` (pre‑split) | Outbox import order, `softDelete` type safety; Drizzle RLS `.withRLS()` migration test |
-| Fix 6 | `firm-request-context` | Comprehensive unit + integration tests (nested async, concurrent contexts); module augmentation design test |
-| Fix 7 | `firm-observability` | `initializeObservability`, `withSpan`, `withTenantSpan`, `captureError`, `createTenantMeter`, `resetForTesting` |
-| Fix 8 | `firm-primitives` | Gatekeeper unit tests (`asTenantId`, etc.) |
-| Fix 9 | `firm-logger` | Concurrent async context test (split‑brain scenario); `logger.child`, sampling, `createTestLogger` |
-| Fix 10 | `firm-health` | OTel health check test; event‑driven registration; synthetic runner error recovery |
-| New | `firm-metering` | `checkQuota()` enforcement, quota warning at 80%, `getUsageSummary` |
-| New | `load-tests/` | Outbox throughput, API rate‑limit holding, tenant isolation under concurrent load |
-| New | `chaos/` | Redis‑down rate‑limiter fail‑open, outbox worker crash recovery, PgBouncer eviction (highest priority) |
+**Worker contract** — The structural and behavioural requirements every worker must satisfy, defined in §E.2. A worker that does not satisfy the contract is not considered buildable.
 
-**All critical‑path packages will have ≥80% unit/integration test coverage after Phase 1. Load and chaos testing will have baseline scenarios passing before Phase 2 is complete.**
+**X-action** — Cross-cutting Phase 1 action (X1, X2, X3) that is not a package-level bug fix but must complete within Phase 1. Defined in §B.2.
 
 ---
 
-## Section 5: Gap Analysis & Missing Inventory
+## §K Layer 6 Gap Register
 
-**Current status:** Existing codebase covers Layers 0‑4 (infrastructure). **No** Layer 5 (UI), **no** Layer 6 (business features), **no** Layer 7 (adapters), **no** applications yet.
+The following gaps were identified in UPDATE.md and are not captured in the phase roadmap narratives above. Each is a discrete action item tied to a specific package. They are recorded here as the authoritative enhancement backlog — not optional polish, but underspecified behaviours that will produce bugs or data corruption when the package is built without them.
 
-**Authoritative total after all planned packages:** **187 packages** (L0‑L7) + **105 adapters** + **22 applications** + **13 workers** = **~231 artifacts**.
+### K.1 Tier A — Core Infrastructure Gaps
 
-**Packages still to build:** **~164** (187 total − 23 existing).  
-**Adapters still to build:** **105** (none exist).  
-**Applications still to build:** **22** (none exist).
+**`firm-bus`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| `SAGA_COMPENSATION_FAILED` DLQ | Compensation step failure currently routes to the same DLQ as primary failure — silent data corruption. Need a distinct DLQ category with its own alert routing. | Compensated sagas appear failed; no recovery path; data left in inconsistent state |
+| `sequenceKey` for ordered delivery | Some operations require causal ordering (e.g., `lead.created` → `lead.scored`). Define `sequenceKey` on outbox events for partition-level ordering. | Out-of-order processing produces incorrect CRM/pipeline state |
+| Consumer lag alerting | No defined SLO or alert threshold for outbox consumer lag. Expose `getConsumerLag()` probe for `firm-health`. | Silent backlog accumulation; outbox delivery SLO breached without alert |
+| Event replay capability | Required for debugging, compliance audits, and rebuilding the CQRS read model. Not currently in spec. | Read model rebuild after incident requires full DB restore instead of event replay |
 
----
+**`firm-flags`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Entitlement conflation | `firm-flags` currently conflates temporary flags (A/B tests, rollouts — mandatory expiration) with permanent entitlements (plan-based capabilities). | Permanent entitlements acquire spurious expiry dates; flag expiration CI gate produces false failures |
+| Extract permanent entitlements | Move permanent entitlements to `firm-feature-gates` (see §K.4). `firm-flags` retains only temporary, expiring rollout flags. | — |
 
-### 5.1 Missing Infrastructure Packages (Tier A — Phase 2)
+**`firm-metering`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Typed `QuotaDimension.resetSchedule` | Quota dimension reset schedules are not first-class data. `QuotaDimension` needs a typed `resetSchedule: 'daily' \| 'monthly' \| 'annual'`. | Quota counters never reset; tenants blocked after first billing period |
+| Three-tier aggregate quota enforcement | `checkQuota()` must enforce sub-account individual limit AND agency aggregate limit simultaneously. A sub-account burning 100% of the agency's shared quota must fail even if that sub-account has not reached its individual limit. | Agency overages unbounded; platform absorbs cost beyond plan |
 
-These 16 packages form the platform backbone. They must be built before any business feature package can operate. All are ❌ not built.
+**`firm-notifications`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Three-level preference cascade | Level 1: platform default. Level 2: tenant override (agency restricts or expands). Level 3: user choice (can opt down from tenant defaults, never up). All three levels must be evaluated in order. | Users receive notifications they explicitly opted out of; GDPR/CNIL risk |
+| In-app notification persistence | Missing in-app notification store with read/unread state for dashboard bell icon. This is distinct from transient delivery. | No notification history; no unread count; portal dashboard incomplete |
 
-**Prerequisite:** The `firm-db` split into `firm-db-schema` + `firm-db-client` must be complete before any package in this list is built, as every one of them will import schema types or connection infrastructure.
+**`firm-sse`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Redis Pub/Sub fanout | SSE connections are per-server. Without Redis Pub/Sub, a multi-server deployment cannot broadcast real-time events to clients connected to different nodes. | Real-time updates silently fail for multi-node deployments |
 
-| # | Package | Depends on | Core capability | Critical note |
-|---|---------|------------|----------------|---------------|
-| 1 | `firm-bus` | db-schema, db-client, req-ctx, logger, flags | Outbox processor, cron, sagas | **ADR pending** (Inngest vs. custom outbox) – must be resolved before code is written |
-| 2 | `firm-flags` | db-client, cache, auth, env | Feature flags (expiration enforced) | Add circuit breaker for Redis unavailability |
-| 3 | `firm-metering` | db-client, cache, api-contracts, bus | Usage counters, **`checkQuota()` enforcement** (must reject before operation, not detect after) | Add 80% quota warning event |
-| 4 | `firm-audit` | db-client, crypto, req-ctx | Immutable cryptographically chained audit log | Must support `queryAuditLog()` and `exportAuditLog()` |
-| 5 | `firm-i18n` | db-client, cache, req-ctx | Translation keys, locale formatting, timezone-aware dates, RTL support, ICU MessageFormat pluralisation | Required for any multi‑region deployment |
-| 6 | `firm-template-engine` | db-client, i18n, media | Templates with versioning, rendering | **ADR pending** (Liquid for email/SMS, Handlebars for PDF) |
-| 7 | `firm-media` | db-client, cache, bus, consent, storage adapter | File storage, image transformation pipeline (WebP/AVIF, `srcset`), deduplication by content hash, CDN cache invalidation | `adapter-storage-local` must exist before local development |
-| 8 | `firm-tenant-config` | db-client, cache, validators, flags | Per‑tenant config resolution, merge with plan defaults, versioning with rollback | Emits `tenant-config.updated` event for CDN purge |
-| 9 | `firm-payments` | db-client, bus, auth, env, api-contracts, stripe adapter | Stripe checkout, webhooks (constant‑time signature verification), idempotency | Payment method management, split payment support |
-| 10 | `firm-notifications` | db-client, bus, auth, consent, template-engine, adapters | Multi‑channel send, preferences, digest batching, per‑channel retry policy, in‑app unread count | Grouping window prevents 500 individual emails from bulk lead import |
-| 11 | `firm-webhooks` | db-client, bus, crypto, auth | Outbound delivery, retry, signing, subscription management, test ping endpoint, mutual TLS support | URL reachability validated before endpoint saved |
-| 12 | `firm-search` | db-client, bus, auth, api-contracts | Full‑text search, faceting, tenant isolation enforced at application layer (RLS as safety net) | **ADR pending** (PostgreSQL FTS vs. Typesense/Meilisearch) |
-| 13 | `firm-sdk` | api-contracts, crypto, types | TypeScript client, pagination, `FirmClient.withTenant()`, separate node/browser exports, `verifyWebhookSignature()` | **Relocated from L6 to L2** – lives in `packages/layer2-data/firm-sdk` |
-| 14 | `firm-migrations` | db-client, env | Migration runner, drift check | – |
-| 15 | `firm-seed` | db-client | Deterministic seed data (dev/test) | – |
-| 16 | `firm-sse` | db-client, auth, bus | Server‑Sent Events delivery channel for real‑time dashboard and portal updates | New Tier A package |
-| 17 | `firm-kpi` | db-client, bus, observability | Business KPI telemetry, anomaly alerts, revenue/lead‑conversion anomaly detection | *(Renamed from `firm-telemetry`)* |
+**`firm-search`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| ADR: tenant isolation model | PostgreSQL FTS (RLS enforces isolation) vs. Typesense/Meilisearch (separate index per tenant) vs. shared index with `tenantId` filter. Must be decided before implementation. | Wrong choice requires full re-index migration; tenant data may bleed in shared-index model |
 
-**Build order within Phase 2:** bus → flags → metering → audit → i18n → template‑engine → media → tenant‑config → payments → notifications → webhooks → search → sdk → migrations → seed → sse → kpi.
+**`firm-kpi`** (renamed from `firm-telemetry`)
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| `registerKpi(name, computeFn, tenantId)` IoC | KPI registration must use inversion-of-control so feature packages register their own KPIs without importing `firm-reporting`. | `firm-kpi` accumulates hard-coded knowledge of every feature package — circular dependency risk |
+| Time-bucketed aggregation | Hourly/daily/weekly/monthly aggregation computed by cron via `firm-bus`, stored in read model. | Reports built on raw event streams are unacceptably slow at scale |
+| Anomaly detection | ADR required: z-score vs. IQR vs. seasonal decomposition. Alert threshold model: absolute, percentage change, standard deviations from baseline. | No anomaly alerting; tenant dashboards miss significant metric changes |
 
----
-
-### 5.2 Missing Business Domain Packages (Tiers B‑D — Phases 4‑7)
-
-All packages are ❌ not built. Dependencies assume Tier A infrastructure packages are complete.
-
-#### Tier B – Operations (8 packages — Phase 4)
-
-| Package | Core capability | Depends on | Key addition vs. original scope |
-|---------|----------------|------------|----------------------------------|
-| `firm-provisioning` | Tenant lifecycle saga (create/upgrade/offboard) | db-client, bus, auth, billing, flags, notifications | Dry‑run mode; provisioning health check |
-| `firm-compliance` | GDPR erasure (2‑phase), data export, Article 30 report generation | db-client, bus, audit, consent, media | Data residency enforcement check (GDPR Art 32) |
-| `firm-projects` | Project/task mgmt, kanban, time tracking (billable/non‑billable), client‑visible vs. internal tasks | db-client, auth, notifications, bus | Task dependency tracking |
-| `firm-sales-pipeline` | Deal pipeline, stages, forecasting, lead scoring integration, automated stage transitions | db-client, auth, search | *(Renamed from `firm-pipeline`)* |
-| `firm-documents` | PDF generation, e‑signature (multi‑signatory with order), collaborative review, document analytics | db-client, notifications, media, bus, auth, template-engine, pdf adapter | Proposals absorbed here (not a separate package) |
-| `firm-appointments` | Booking pages, calendar, reminders, buffer time, group appointments, no‑show policies | db-client, notifications, bus, booking adapter, videoconferencing adapter | Video link attachment via adapter |
-| `firm-workflow` | Internal automation (contract→project→email) | db-client, bus, notifications, auth, webhooks | **Most under‑specified package – ADR required for condition model before build** |
-| `firm-integrations` | Unified integration dashboard, OAuth health scoring, self‑healing token refresh | all adapters, db-client, auth | Integration health score (not binary) |
-
-**`firm-workflow` vs. `firm-funnels` boundary:**
-- `firm-workflow` → inward‑facing operational automation ("when proposal signed → create project, assign PM, send onboarding email").
-- `firm-funnels` → outward‑facing marketing automation ("when lead created → wait 1 day → nurture email").
-
-#### Tier C – Revenue (2 packages — Phase 5)
-
-| Package | Core capability | Depends on | Key addition |
-|---------|----------------|------------|--------------|
-| `firm-subscriptions` | Plan lifecycle, upgrades/downgrades, entitlements, grace periods, grandfathering | db-client, flags, metering, notifications | Subscription event stream for downstream consumers |
-| `firm-billing` | Invoicing, revenue recognition, dunning, multi‑currency, tax jurisdiction detection, aging reports | db-client, subscriptions, payments, bus, notifications, accounting adapter | EU VAT OSS scheme handling |
-
-#### Tier D – Client‑Facing & Marketing (11 packages — Phase 6)
-
-| Package | Core capability | Depends on | Key addition |
-|---------|----------------|------------|--------------|
-| `firm-reporting` | Branded PDF reports, dashboards, report scheduling, shareable links, CQRS read model | db-client (read‑schema), bus, notifications, media, cache, auth, analytics/ads adapters | **ESLint rule: only bus handlers write to read model** |
-| `firm-cms` | Content delivery, edge caching, content staging, SEO metadata per item, multilingual with locale fallback | db-client, cache, media, i18n, consent, CMS adapter | Staging environment with publish workflow |
-| `firm-forms` | Form builder, conditional logic, partial save/resume, field‑level abandonment analytics, CRM field mapping validation | db-client, validators, api-contracts, security, auth | Prevent broken CRM field mappings at publish time |
-| `firm-landing-pages` | Block‑based pages, A/B tests, Core Web Vitals tracking, conversion pixel management, page archiving with analytics retention | db-client, cache, consent, validators, media, api-contracts, cms | Pixels only fire after consent granted |
-| `firm-funnels` | Multi‑step automation, saga execution, cross‑channel, funnel analytics, pausing | db-client, bus, notifications, auth, webhooks, flags | Entry rate, step completion, drop‑off analytics |
-| `firm-social` | Content calendar, cross‑platform posting, social listening, content recycling | db-client, bus, media, reporting, auth, social adapters | **Outbound only** – inbound DMs route to `firm-inbox` via `social.dm.received` event |
-| `firm-seo` | Rank tracking, site audits, technical SEO crawl, schema markup management, SERP feature detection | db-client, bus, reporting, cache, SEO adapters | Structured data templates for local business, events, products |
-| `firm-reputation` | Review monitoring, competitor tracking, response time SLA monitoring, AI response suggestions with approval gate | db-client, bus, notifications, ai, funnels, review adapters | No auto‑publishing of AI‑generated responses |
-| `firm-ads` | Ad performance aggregation, budget alerts, UTM management, creative performance, ad fatigue detection | db-client, bus, reporting, media, cache, ad adapters | Frequency cap alerts |
-| `firm-ai` | **Infrastructure layer:** AI provider client management via adapters, token counting, cost metering via `firm-metering`, model routing, rate limiting via `firm-rate-limiter`, lead scoring and personalization (analytical, no approval gate) | db-client, metering, rate-limiter, bus, ai adapters | No generation logic; no compliance‑sensitive features |
-| `firm-ai-content` | **Generation layer:** content generation with human‑approval gate enforced, C2PA manifest generation (Aug 2 deadline), content moderation, brand voice enforcement, `pending/approval` state machine, NY Synthetic Performer disclosure (Jun 9 deadline) | db-client, ai, media, cms, flags, env, security | Compliance‑sensitive; cannot publish without explicit human approval |
-| `firm-inbox` | Unified conversation threading, assignment/routing, SLA tracking, tagging | db-client, auth, notifications, email/sms/social/chat adapters | All inbound messages from all channels converge here |
-
-**`firm-analytics`** (proposed, pending ADR) would add UTM tracking, attribution modeling, and real‑time dashboards distinct from `firm-reporting`’s pre‑computed exports. It is not included in the count above.
-
-**Removed from original scope:** `firm-proposals` (absorbed by `firm-documents`), `firm-tracking` (concerns absorbed by `firm-analytics`/`firm-consent`/`VoicePort` adapter).
+**`firm-media`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Video transcoding pipeline | Multi-resolution output; job queue; progress events via `firm-sse`. | Video uploads stored but unplayable across devices without transcoding |
+| Content-addressed deduplication | Hash-based dedup before storage write; prevents duplicate storage charges. | Storage costs amplified by duplicate uploads |
 
 ---
 
-### 5.3 Missing Adapter Packages (105 — Phase 3, parallel)
+### K.2 Tier B — Operations Gaps
 
-Each adapter implements a Port interface defined in `firm-types`. Naming convention: `adapters-<category>-<provider>`. All are ❌ not built.
+**`firm-provisioning`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Inherit-and-detach model | When a sub-account is created, copy (not link) the agency's default branding, feature flags, and quota assignments, then detach so the child diverges independently. Linking corrupts children if parent is deleted or modified. | Deleting an agency's default config propagates to all sub-accounts |
 
-#### Priority Tiers and Categories
+**`firm-subscriptions`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| `computeUsageCharge(tenantId, billingPeriod)` | This closes the metering→billing loop. Reads `firm-metering` aggregates, applies plan pricing, returns typed line items for `firm-billing`. | Metered usage is tracked but never converted to invoice line items |
 
-**High Priority (22 adapters) — Required to unblock core feature development:**
+**`firm-billing`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| `SplitRule` aggregate | Revenue split as a first-class domain object: platform percentage + agency percentage for white-label reseller model. | Revenue share computed ad-hoc per invoice; no auditable split history |
 
-| Category | Adapter Packages |
-|----------|-----------------|
-| CRM | `adapters-crm-hubspot`, `adapters-crm-salesforce`, `adapters-crm-gohighlevel`, `adapters-crm-pipedrive`, `adapters-crm-zoho`, `adapters-crm-activecampaign`, `adapters-crm-keap` |
-| Email | `adapters-email-resend`, `adapters-email-sendgrid`, `adapters-email-ses`, `adapters-email-postmark`, `adapters-email-smtp`, `adapters-email-mailgun` |
-| Payments | `adapters-payments-stripe`, `adapters-payments-paddle`, `adapters-payments-paypal`, `adapters-payments-square` |
-| AI Models | `adapters-ai-openai`, `adapters-ai-anthropic`, `adapters-ai-google`, `adapters-ai-azure-openai` |
-| Storage | `adapters-storage-s3`, `adapters-storage-r2`, **`adapters-storage-local`** (dev – critical for local development) |
+**`firm-projects`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| `ProjectTemplate` aggregate | `createProjectFromTemplate(templateId, tenantId)` — standardised project scaffolding for agencies. | Each project created from scratch; no template-driven onboarding |
 
-**Medium Priority (adapters needed for marketing operations):**
+**`firm-appointments`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Round-robin + collective booking | Round-robin staff assignment; collective booking (all required attendees must be free); multi-staff required for service types. | Basic single-staff booking only; agency workflows blocked |
 
-SMS (Twilio, Vonage, MessageBird), Booking (Cal.com, Google Calendar, Outlook, Acuity), Analytics (Plausible, GA4, Fathom, Mixpanel, **PostHog**), Social (Meta, Twitter, LinkedIn, TikTok), SEO (Google Search Console, SEMrush, Ahrefs, Moz), Paid Ads (Google Ads, Meta Ads, LinkedIn Ads, TikTok Ads), Reviews (Google Business Profile, Trustpilot, Yelp), Proposals/DocuSign (DocuSign, PandaDoc, Qwilr, Dropbox Sign), CMS (Sanity, Strapi, Directus, Contentful), PDF Generation (**Puppeteer**, PDFShift), AI Image Generation (**OpenAI DALL‑E 3**, Stability AI), Video Conferencing (**Zoom**, Google Meet, Microsoft Teams), Email Deliverability Validation (**ZeroBounce**, NeverBounce, Kickbox).
+**`firm-documents`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Template merge fields + event contracts | Document templates with merge fields; event contracts with `firm-sales-pipeline` and `firm-billing` must be defined in `firm-events` before build begins. | Documents built without pipeline/billing integration; cannot trigger e-signature on deal close |
 
-**Low Priority (adapters for extended platform capabilities):**
+**`firm-sales-pipeline`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| `lead.scored` event contract | Must be defined in `firm-events` with payload `{ leadId, score, confidence, scoringModelVersion, factors }` before `firm-sales-pipeline` is built. `firm-ai` emits it; `firm-sales-pipeline` subscribes. | AI lead scoring exists but pipeline never receives scores |
 
-Accounting (QuickBooks, Xero, FreshBooks), CRO (Hotjar, CrazyEgg, Optimizely, VWO), Project Mgmt (Asana, Trello, Monday, ClickUp), Design (Figma, Canva, Adobe CC), Video (Mux, YouTube, Vimeo, Wistia), Chat (Intercom, Drift, Tidio, WhatsApp), SCIM (**Okta**, **Azure AD** – split per‑provider).
+**`firm-workflow`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| ADR-006 required | Condition model, state machine type, trigger system, and compensation model are all undefined. Do not begin implementation before ADR-006 is merged. | Package built on wrong assumptions; complete rebuild required |
 
-**Critical missing adapters that must be built first in Phase 3:**
-1. `adapters-storage-local` – unblocks all local development for media features
-2. `adapters-pdf-generator-puppeteer` – unblocks `firm-documents`
-3. `adapters-ai-image-openai` + `adapters-ai-image-stability` – unblocks AI image generation
-4. `adapters-videoconferencing-zoom` + `adapters-videoconferencing-google-meet` – unblocks video links in appointments
-5. `adapters-email-validation-zerobounce` – unblocks bulk email campaigns
-
-**Adapter governance:**
-- Every adapter must be generated by the scaffolding tool (not hand‑authored). CI Gate 13 enforces this.
-- A stub and a conformance test are generated simultaneously with each adapter.
-- `packages/layer7-adapters/REGISTRY.md` is auto‑generated on every adapter scaffold invocation and committed.
-
----
-
-### 5.4 Missing Applications (22 — Phase 8)
-
-All applications are ❌ not built. **ADR pending:** whether to deploy as 22 separate apps, 1 unified app, or 3‑5 grouped apps (hybrid recommended).
-
-| # | Application | Purpose |
-|---|-------------|---------|
-| 1 | `apps/platform/platform-portal` | Internal agency hub |
-| 2 | `apps/platform/platform-analytics` | Agency analytics dashboards |
-| 3 | `apps/platform/platform-crm` | Lead and deal management |
-| 4 | `apps/platform/platform-booking` | Appointment scheduling |
-| 5 | `apps/platform/platform-forms` | Form builder |
-| 6 | `apps/platform/platform-funnels` | Funnel builder |
-| 7 | `apps/platform/platform-landing-pages` | Landing page editor |
-| 8 | `apps/platform/platform-email` | Email campaign management |
-| 9 | `apps/platform/platform-seo` | SEO tools |
-| 10 | `apps/platform/platform-reputation` | Review monitoring |
-| 11 | `apps/platform/platform-ads` | Ad management |
-| 12 | `apps/platform/platform-social` | Social scheduling |
-| 13 | `apps/platform/platform-content` | Content/asset management |
-| 14 | `apps/platform/platform-reporting` | Reports and dashboards |
-| 15 | `apps/platform/platform-proposals` | Proposal builder |
-| 16 | `apps/platform/platform-invoicing` | Invoicing |
-| 17 | `apps/platform/platform-projects` | Project management |
-| 18 | `apps/platform/platform-documents` | Document management |
-| 19 | `apps/platform/platform-chat` | Unified inbox |
-| 20 | `apps/platform/platform-storybook` | Component library (Storybook) |
-| 21 | `apps/platform/platform-admin` | Platform administration |
-| 22 | `apps/marketing-site` | Agency public website (CMS‑driven, lead capture) |
-
-**Additionally, client sites (`apps/clients/`):** Generated per client, not hand‑authored. **ADR pending** — committed vs. ephemeral generation (ephemeral recommended, config stored in `apps/clients/config/<slug>.json`). No committed client‑specific code.
+**`firm-integrations`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| `getValidToken(providerId, tenantId)` | Proactive OAuth token refresh before expiry; injected into adapter constructors. | Adapter calls fail with expired tokens mid-operation; no automatic recovery |
 
 ---
 
-### 5.5 Build Order Summary (Phases 1‑8) — Revised
+### K.3 Tier C — Revenue Gaps
 
-**Phase 1 (Foundation Hardening — Weeks 1‑3):** 23 existing packages + new extracted packages + critical missing adapters.
-- Execute all critical fixes (Fix 1‑10 + new additions).
-- Extract `firm-rate-limiter` from `firm-security`.
-- Split `firm-db` into `firm-db-schema` + `firm-db-client`.
-- Create `adapters-storage-local`.
-- Add `checkQuota()` to `firm-metering` with CI gate.
-- Fix `firm-request-context` design flaw.
-- Build `load-tests/` and `chaos/` directories with baseline scenarios.
-- Rename `firm-test-utils` → `firm-testing` and expand scope.
-
-**Phase 2 (Infrastructure — Weeks 4‑9):** 17 Tier A packages.
-- Build in order: bus → flags → metering → audit → i18n → template‑engine → media → tenant‑config → payments → notifications → webhooks → search → sdk → migrations → seed → sse → kpi.
-- Resolve `firm-bus` ADR before writing any bus code.
-- Write `firm-types` shared kernel ADR before any L6 package.
-
-**Phase 3 (Adapters — Weeks 6‑20, parallel with Phases 2‑5):** 105 adapters.
-- High priority first (22 adapters).
-- Critical missing adapters built immediately: storage‑local, pdf‑generator, ai‑image, videoconferencing, email‑validation.
-- Medium and low priority adapters built progressively alongside feature packages that need them.
-
-**Phase 4 (Operations — Weeks 10‑14):** 8 Tier B packages.
-
-**Phase 5 (Revenue — Weeks 13‑16):** 2 Tier C packages.
-
-**Phase 6 (Client‑Facing — Weeks 15‑22):** 11 Tier D packages (including `firm-ai` + `firm-ai-content`).
-
-**Phase 7 (Portal — Weeks 21‑24):** `firm-portal`.
-
-**Phase 8 (Applications — Weeks 24‑30):** 22 apps (or grouped per ADR). Client site generation model ADR resolved before any client site is built.
+*(All Tier C gaps captured in §K.2 via `firm-subscriptions` and `firm-billing` entries above.)*
 
 ---
 
-### 5.6 Missing Root Files and Directories (Not Packages — Essential Artifacts)
+### K.4 Tier D — Client-Facing & Marketing Gaps
 
-The following root‑level directories, files, and infrastructure artifacts are required for platform maturity. They are not packages but are as critical as packages for security, compliance, and operational readiness. All are ❌ not created.
+**`firm-reporting`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Three-package delivery chain | Full chain: `firm-bus` cron emits `report.schedule.triggered` → `firm-reporting` computes + stores PDF via `firm-media` → emits `report.generated` (signed URL) → `firm-notifications` delivers email/in-app. Chain must be explicitly specified before build. | Reports generated but never delivered; or delivered without proper signed-URL expiry |
 
-| Artifact | Type | Priority | Required for |
-|----------|------|----------|--------------|
-| `load-tests/` | Directory (k6 scenarios) | 🔴 Phase 1 | Verifying outbox throughput, tenant isolation under load, rate‑limit holding |
-| `chaos/` | Directory (Toxiproxy scenarios) | 🔴 Phase 1 | Verifying Redis‑down fail‑open, outbox worker crash recovery, PgBouncer eviction safety |
-| `firm-config-k6` | Layer 0 config package | 🔴 Phase 1 | Shared k6 configuration (base URLs, auth fixtures, ramp‑up profiles) |
-| `SECURITY.md` | Root file | 🔴 Phase 1 | SOC 2 audit evidence, vulnerability disclosure process, security contact |
-| `CONTRIBUTING.md` | Root file | 🔴 Phase 1 | PR process, branch naming, ADR proposal process, test requirements |
-| `policies/` | Directory (reserved for OPA/Rego) | 🟠 Phase 2 | Documented migration trigger for OPA; currently reserved with README |
-| `docs/slos/` | Directory | 🟠 Phase 2 | SLO definitions for API p95, outbox lag, auth success rate, RLS health, cross‑tenant queries, AI approval rate |
-| `docs/runbooks/` | Directory (expanded) | 🟠 Phase 2 | One runbook per Grafana alert; currently only 2 exist |
-| `docs/compliance/data-residency.md` | File | 🔴 Before EU onboarding | Data category taxonomy, region assignment logic, GDPR Art 32/51f evidence |
-| `docs/adr/` | Directory | 🔴 Phase 1 | ADR records for all 12 open decisions |
-| `contracts/v1/` | Directory (versioned schemas) | 🟠 Phase 2 | openapi.json, asyncapi.yaml, events.schema.json — build pipeline in CI |
-| `scripts/ci/generate-asyncapi.ts` | CI script (Gate 16) | 🟠 Phase 2 | AsyncAPI 3.0 generation from EventRegistry |
-| `scripts/ci/schema-build.ts` | CI script | 🟠 Phase 2 | Versioned schema artifact generation |
-| `.github/ISSUE_TEMPLATE/` | Directory | 🟠 Phase 2 | bug_report, feature_request, adr_proposal, security_vulnerability templates |
-| `.github/PULL_REQUEST_TEMPLATE.md` | File | 🟠 Phase 2 | Checklist: tests added, coverage ≥80%, ADR if breaking |
-| `packages/layer7-adapters/REGISTRY.md` | File | 🟡 Phase 3 | Auto‑generated adapter catalog; columns: Category, Package, Port, Status, Priority |
-| `tools/catalog/` | Tool directory | 🟡 Phase 3 | Static internal developer portal (reads package.json, generates browsable catalog) |
-| `infra/regions/` | Directory structure | 🔴 Phase 1 | Regional infrastructure partitions (`us-east-1/`, `eu-west-1/`) for GDPR data residency |
+**`firm-funnels`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| `touchpoint.recorded` event | Standardised event emitted by `firm-funnels`, `firm-ads`, and `firm-social`. Required for multi-touch attribution computation in `firm-reporting`. | Attribution computed only on funnel-originated touchpoints; ad and social touches invisible |
 
-**`infra/` regional structure is required before any EU infrastructure is provisioned.** The current flat `infra/` directory must be partitioned into `infra/regions/us-east-1/`, `infra/regions/eu-west-1/`, and `infra/shared/` for global services (Cloudflare, monitoring).
+**`firm-ads`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Creative asset lifecycle | Creative library (images, copy variants, video clips) with versioning, A/B test variant assignment, performance tracking per creative, approval workflows before publish, and fatigue detection. | Creatives published without approval; no fatigue detection; A/B results unmeasurable |
 
----
+**`firm-social`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| Social listening ADR | Social listening (brand mention monitoring) must be assigned: `firm-reputation` (via `social.mention.received` event) is the recommendation. Leaving it in `firm-social` creates duplicate monitoring logic. | Mention monitoring duplicated across two packages; `firm-reputation` review workflows miss social mentions |
 
-### 5.7 Recalculated Completion Metrics
-
-| Metric | Previous (Incorrect) | Corrected |
-|--------|---------------------|-----------|
-| Total planned packages | ~94 | **187** |
-| Total adapter packages | 33 | **105** |
-| Total applications | 5 | **22** |
-| Total artifacts (packages + workers + apps) | ~99 | **~231** |
-| Current completion (packages) | ~14% | **23/187 = 12.3%** |
-| Current completion (all artifacts) | ~14% | **23/231 = 10.0%** |
-
-**Note:** Completion percentage will increase as Phase 1 extracts `firm-rate-limiter`, `firm-db-schema`, `firm-db-client`, creates `firm-config-k6`, and builds `adapters-storage-local`. These are counted as built only after they exist with passing tests.
+**`firm-inbox`**
+| Gap | Description | Risk if Ignored |
+|-----|-------------|----------------|
+| AI reply drafting integration | Event chain: `inbox.message.received` → `firm-ai` → `inbox.reply.drafted` → human approval gate (same pattern as `firm-ai-content`). Contract must be defined in `firm-events` before `firm-inbox` is built. | AI reply drafts never surfaced; agents write all replies manually |
 
 ---
 
-## Section 6: Data Flow Integration Plan
+### K.5 Missing Packages Not Previously in §A.6
 
-Every business action follows the same standard path: **feature → emitEvent (same DB transaction) → outbox → bus → handlers** (retry, dead‑letter). Context propagation via `firm-request-context` carries `tenantId`, `userId`, `traceId`, `correlationId`, and `subAccountId` through every stage. The following scenarios describe the target state after all Phase 1 hardening and splits are complete.
+The following packages were identified in UPDATE.md as missing from the original L6 inventory. They are lower priority than Tier A–D but must be in the package catalog before Phase 6 planning begins.
+
+| Package | Tier | Priority | Phase | Description |
+|---------|------|----------|-------|-------------|
+| `firm-feature-gates` | A | 🟠 | Phase 3 | Permanent entitlement checks (plan-based), separated from `firm-flags`. `checkEntitlement(tenantId, feature)`: boolean backed by `firm-subscriptions` data, cached via `firm-cache`, invalidated on plan change. Emits `entitlement.gate.denied` events. |
+| `firm-worker-runtime` | A | 🔴 | Phase 3 | Already in §A.6 — confirmed as a first-class package, not a utility. `createWorker(options)` factory; graceful `SIGTERM` drain; K8s probes; worker-level metrics; uncaught exception handling; startup dependency checks. |
+| `firm-calls` | B | 🟡 | Phase 5 | VoIP call initiation/reception (Twilio, Aircall, Vonage adapters). Call recording + transcription storage (`firm-media`). Voicemail and ringless voicemail drop. Call tracking numbers with attribution. AI-assisted call summaries. Click-to-call from CRM. |
+| `firm-surveys` | D | 🟡 | Phase 6 | NPS/CSAT/CES with automatic score computation. Anonymous response mode (GDPR-friendly). Conditional branching. Aggregate-first analytics via `firm-reporting`. Delivery via `firm-notifications` (email/SMS invitations, one-click response). |
+| `firm-chatbot` | D | 🟡 | Phase 6 | No-code AI chatbot builder. Visual conversation flow (nodes: message, condition, user input, CRM action, handoff). Intent recognition (FAQ pattern or LLM). Lead qualification → `firm-sales-pipeline`. Appointment booking → `firm-appointments`. Embedded widget. Fully automated, no human queue. |
+| `firm-courses` | D | 🟡 | Phase 7 | Course structure (modules, lessons, quizzes with auto-grading, assignments). Membership access control (subscription tier, cohort, coupon). Completion tracking per student. Certificate generation (`firm-documents`). Drip content scheduling. Student engagement analytics (`firm-reporting`). |
 
 ---
 
-### 6.1 Scenario A: Lead Captured on Landing Page
+### K.6 Additional L5 Missing Packages
+
+UPDATE.md identified three additional Layer 5 packages beyond those in §A.5:
+
+| Package | Priority | Phase | Description |
+|---------|----------|-------|-------------|
+| `firm-error-boundary` | 🟠 | Phase 5 | `ErrorBoundary` (fallback + `onError` → `captureError` with tenant context); `AsyncBoundary` (Suspense + ErrorBoundary combined); `Skeleton` variants (card, table, sidebar — matching `firm-ui` shapes); `EmptyState`; `useErrorBoundary` programmatic trigger. |
+| `firm-forms-utils` | 🟠 | Phase 5 | RHF + Zod resolver factory; multi-step form state machine; shared types (`FormState<T>`, `FieldError`, `FormSubmitResult`); `createFieldSchema(baseSchema, overrides)`; `withFormContext<T>` HOC. **ADR required:** standalone `firm-forms-utils` vs. `@firm/ui/forms-utils` sub-export. Standalone recommended — `firm-forms` (L6) can consume without a visual `firm-ui` dependency. |
+| `firm-motion` | 🟡 | Phase 5 | Token-backed animation variants with `useReducedMotion` (from `firm-hooks`). Consumes `firm-tokens` duration/easing tokens. **ADR required:** `framer-motion` (~40KB) vs. CSS-only keyframes with CSS custom properties. Decision driven by landing page and portal design requirements. |
+
+---
+
+## §L Master Package Count & Quick Reference
+
+### L.1 Total Package Count by Layer
+
+| Layer | Layer Name | Existing | Missing/Not Built | Total Target |
+|-------|-----------|----------|------------------|-------------|
+| 0 | Build & Constraint | 13 | 0 | 13 |
+| 1 | Core Utilities & Environment | 6 | 6 | 12 |
+| 2 | Data & Contracts | 8 | 8 | 16 |
+| 3 | Identity, Security & Consent | 4 | 1 | 5 |
+| 4 | Observability & Health | 2 | 1 | 3 |
+| 5 | UI, Theming & Testing | 4 | 8 | 12 |
+| 6 | Feature Packages | 1 (partial) | 43 | 44 |
+| 7 | Adapters | 0 | 105 | 105 |
+| — | Workers | 0 | 13 | 13 |
+| **Total** | | **38** | **185** | **223** |
+
+> Layer 6 count of 44 includes the 38 packages in §A.6 plus the 6 additions in §K.5. `firm-worker-runtime` is counted once in Layer 6, not also in Workers. Workers are not packages — they are leaf applications.
+
+### L.2 Phase-to-Package Mapping
+
+| Phase | Packages Delivered | Cumulative Total |
+|-------|-------------------|-----------------|
+| Phase 0 | 4 new L1 packages (`firm-id`, `firm-date`, `firm-sanitize`, `firm-invariant`) + 4 L1 enhancements | 42 |
+| Phase 1 | 11 fixes; `firm-rate-limiter` extracted; `firm-db` split (2 packages); 1 adapter; drizzle-zod bridge | 47 |
+| Phase 2 | 9 L2 packages; 2 L4 enhancements; 2 L5 enhancements | 58 |
+| Phase 3 | 7 L6 Tier A packages; 4 workers | 69 |
+| Phase 4 | 7 L6 Tier A packages; 11 adapters; 4 workers | 91 |
+| Phase 5 | 11 L6 Tier B/C packages; 10 adapters; 2 workers | 114 |
+| Phase 6 | 12 L6 Tier D packages; 5 L5 packages; 8 adapters; 3 workers | 142 |
+| Phase 7 | 85 adapters; `firm-schema-registry`; `firm-db-seed` | 229 |
+| Phase 8 | Apps (not packages); E2E; load tests; chaos tests | 229 + apps |
+
+### L.3 All Packages — Alphabetical Quick Reference
+
+A flat alphabetical list for search. Format: `package-name` → Layer / Tier (if L6) / Phase / Status.
+
+| Package | Layer | L6 Tier | Phase | Status |
+|---------|-------|---------|-------|--------|
+| `adapters-*` (105 total) | 7 | — | 4–7 | ❌ not built |
+| `firm-ai` | 6 | D | Phase 4 | ❌ not built |
+| `firm-ai-brand-voice` | 6 | D | Phase 6 | ❌ not built |
+| `firm-ai-chat` | 6 | D | Phase 6 | ❌ not built |
+| `firm-ai-content` | 6 | D | Phase 4 | ❌ not built |
+| `firm-ai-seo` | 6 | D | Phase 6 | ❌ not built |
+| `firm-analytics` | 6 | D | Phase 6 | ❌ not built (scope ADR pending) |
+| `firm-api-contracts` | 2 | — | Phase 2 | ✅ exists; scope too wide |
+| `firm-appointments` | 6 | B | Phase 5 | ❌ not built |
+| `firm-audit` | 6 | A | Phase 3 | ❌ not built |
+| `firm-billing` | 6 | C | Phase 5 | ❌ not built |
+| `firm-bookings` | 6 | B | Phase 5 | ❌ not built |
+| `firm-bus` | 6 | A | Phase 3 | ❌ not built |
+| `firm-cache` | 2 | — | Phase 1 | ⚠️ 4 gaps |
+| `firm-calls` | 6 | B | Phase 5 | ❌ not built |
+| `firm-campaigns` | 6 | B | Phase 6 | ❌ not built |
+| `firm-chatbot` | 6 | D | Phase 6 | ❌ not built |
+| `firm-circuit-breaker` | 1 | — | Phase 0 | ❌ missing |
+| `firm-cms` | 6 | D | Phase 6 | ❌ not built |
+| `firm-codec` | 1 | — | Phase 0/2 | ❌ missing |
+| `firm-compliance` | 6 | B | Phase 5 | ❌ not built |
+| `firm-config-commitlint` | 0 | — | — | ✅ |
+| `firm-config-docker` | 0 | — | — | ✅ |
+| `firm-config-eslint` | 0 | — | — | ✅ |
+| `firm-config-next` | 0 | — | — | ✅ |
+| `firm-config-playwright` | 0 | — | — | ✅ |
+| `firm-config-prettier` | 0 | — | — | ✅ |
+| `firm-config-security-headers` | 0 | — | — | ✅ |
+| `firm-config-storybook` | 0 | — | — | ✅ |
+| `firm-config-tailwind` | 0 | — | — | ✅ |
+| `firm-config-typescript` | 0 | — | — | ✅ |
+| `firm-config-vitest` | 0 | — | — | ✅ |
+| `firm-consent` | 3 | — | Phase 1 | ⚠️ 4 compliance gaps |
+| `firm-courses` | 6 | D | Phase 7 | ❌ not built |
+| `firm-crypto` | 1 | — | Phase 0 | ⚠️ 3 missing, 1 redundancy |
+| `firm-date` | 1 | — | Phase 0 | ❌ missing |
+| `firm-db-client` | 2 | — | Phase 1 | ❌ not yet split |
+| `firm-db-migrations` | 2 | — | Phase 2 | ❌ missing |
+| `firm-db-read` | 2 | — | Phase 1 | ❌ pending ADR-003 |
+| `firm-db-schema` | 2 | — | Phase 1 | ❌ not yet split |
+| `firm-db-seed` | 2 | — | Phase 7 | ❌ missing |
+| `firm-documents` | 6 | B | Phase 5 | ❌ not built |
+| `firm-email-templates` | 5 | — | Phase 5 | ❌ missing |
+| `firm-env` | 1 | — | Phase 0 | ✅ minor gaps |
+| `firm-error-boundary` | 5 | — | Phase 5 | ❌ missing |
+| `firm-errors` | 1 | — | Phase 0 | ⚠️ 2 missing |
+| `firm-events` | 2 | — | Phase 2 | ❌ missing |
+| `firm-feature-gates` | 6 | A | Phase 3 | ❌ missing |
+| `firm-flags` | 6 | A | Phase 3 | ❌ not built |
+| `firm-forms` | 6 | D | Phase 6 | ❌ not built |
+| `firm-forms-utils` | 5 | — | Phase 5 | ❌ missing (ADR) |
+| `firm-funnels` | 6 | D | Phase 6 | ❌ not built |
+| `firm-health` | 4 | — | Phase 1 | ⚠️ 1 gap |
+| `firm-hooks` | 5 | — | Phase 5 | ❌ missing |
+| `firm-i18n` | 6 | A | Phase 4 | ❌ not built |
+| `firm-icons` | 5 | — | Phase 5 | ❌ missing (ADR) |
+| `firm-id` | 1 | — | Phase 0 | ❌ missing |
+| `firm-idempotency` | 2 | — | Phase 2 | ❌ missing |
+| `firm-inbox` | 6 | D | Phase 6 | ❌ not built |
+| `firm-integrations` | 6 | B | Phase 5 | ❌ not built |
+| `firm-invariant` | 1 | — | Phase 0 | ❌ missing |
+| `firm-kpi` | 6 | D | Phase 6 | ❌ not built (renamed from `firm-telemetry`) |
+| `firm-landing-pages` | 6 | D | Phase 6 | ❌ not built |
+| `firm-leads` | 6 | B | Phase 5 | ❌ not built |
+| `firm-logger` | 1 | — | Phase 1 | ⚠️ splitbrain bug |
+| `firm-media` | 6 | A | Phase 4 | ❌ not built |
+| `firm-metering` | 6 | C | Phase 1 | ⚠️ post-op only (Fix 10) |
+| `firm-motion` | 5 | — | Phase 5 | ❌ missing (ADR) |
+| `firm-notifications` | 6 | A | Phase 4 | ❌ not built |
+| `firm-observability` | 4 | — | Phase 1 | ⚠️ 1 gap |
+| `firm-pagination` | 2 | — | Phase 2 | ❌ missing |
+| `firm-payments` | 6 | C | Phase 5 | ❌ not built |
+| `firm-policy` | 3 | — | Phase 2 | ❌ missing |
+| `firm-portal` | 6 | D | Phase 6 | ❌ not built |
+| `firm-ports` | 2 | — | Phase 2 | ❌ missing |
+| `firm-primitives` | 0 | — | — | ✅ |
+| `firm-projects` | 6 | B | Phase 5 | ❌ not built |
+| `firm-provisioning` | 6 | B | Phase 5 | ❌ not built |
+| `firm-query` | 2 | — | Phase 2 | ❌ missing |
+| `firm-rate-limiter` | 3 | — | Phase 1 | ❌ not yet extracted |
+| `firm-reporting` | 6 | D | Phase 6 | ❌ not built |
+| `firm-reputation` | 6 | D | Phase 6 | ❌ not built |
+| `firm-request-context` | 1 | — | Phase 1 | ⚠️ Fix 0 |
+| `firm-sales-pipeline` | 6 | B | Phase 5 | ❌ not built |
+| `firm-sanitize` | 1 | — | Phase 0 | ❌ missing |
+| `firm-schema-registry` | 2 | — | Phase 7 | ❌ missing |
+| `firm-sdk` | 2 | — | Phase 2 | ❌ not built |
+| `firm-search` | 6 | A | Phase 4 | ❌ not built (ADR required) |
+| `firm-security` | 3 | — | Phase 1 | ⚠️ broken; scope too wide |
+| `firm-seo` | 6 | D | Phase 6 | ❌ not built |
+| `firm-social` | 6 | D | Phase 6 | ❌ not built |
+| `firm-sse` | 6 | A | Phase 4 | ❌ not built |
+| `firm-storybook-utils` | 5 | — | Phase 5 | ❌ missing |
+| `firm-subscriptions` | 6 | C | Phase 5 | ❌ not built |
+| `firm-surveys` | 6 | D | Phase 6 | ❌ not built |
+| `firm-template-engine` | 6 | A | Phase 3 | ❌ not built |
+| `firm-tenant-config` | 6 | A | Phase 3 | ❌ not built |
+| `firm-tenancy` | 6 | A | Phase 4 | ❌ not built |
+| `firm-testing` | 5 | — | Phase 1 | ⚠️ 5 gaps |
+| `firm-theme-provider` | 5 | — | Phase 5 | ❌ not built |
+| `firm-tokens` | 0/5 | — | Phase 2 | ⚠️ 3 gaps |
+| `firm-types` | 2 | — | Phase 1 | ⚠️ structurally flawed |
+| `firm-utils` | 1 | — | Phase 0 | ⚠️ 3 missing, 1 bug |
+| `firm-validators` | 2 | — | Phase 1 | ⚠️ Fix 4 |
+| `firm-webhooks` | 6 | A | Phase 4 | ❌ not built |
+| `firm-white-label` | 6 | A | Phase 4 | ❌ not built |
+| `firm-workflow` | 6 | B | Phase 5 | ❌ not built (ADR-006 required) |
+| `firm-worker-runtime` | 6 | A | Phase 3 | ❌ not built |
+
+---
+
+## §M Document Maintenance
+
+### M.1 When to Update This Document
+
+This document changes when any of the following occur:
+
+- A phase Go/No-Go is reached — update the phase's status and record the date
+- A bug fix from §B.1 is merged — update the package row in §A and mark the fix complete
+- An ADR is resolved — update §F (mark Resolved with date + outcome), update affected §A rows, update §D phase prerequisites
+- A new package is added to any layer — add it to §A, §K (if L6 gap), and §L.3
+- A compliance deadline is met — update §C (mark Done with date and PR reference)
+- A CI gate is activated — update §I
+- Package scope changes due to an ADR — update §A, §D, and §K as needed
+
+### M.2 What This Document Does Not Contain
+
+The following are deliberately excluded — they live in companion documents and must not be duplicated here:
+
+| Topic | Lives In |
+|-------|---------|
+| Layer definitions, package interfaces, data flow diagrams | Blueprint §2, §5 |
+| Enforcement mechanism specifications (ESLint rules, CI gate logic) | Blueprint §4 |
+| Resolved architectural decisions | Critique Part 2 |
+| Critical security finding details (RLS+PgBouncer, `checkQuota`) | Critique Part 3 |
+| Build & TypeScript architecture | Critique Part 4 |
+| Dependency governance (catalogs, Renovate) | Critique Part 5 |
+| Full repository structure | Critique Part 6 |
+| Database migration architecture | Critique Part 7 |
+| Governance & developer experience | Critique Part 8 |
+| CI/CD pipeline gate logic | Critique Part 9 |
+| Observability & monitoring infrastructure | Critique Part 10 |
+| ADR detail (problem statement, options, trade-offs) | Critique Part 11 |
+
+### M.3 Document Ownership
+
+| Section | Owner | Review Cadence |
+|---------|-------|---------------|
+| §A Package Health | `@firm/architects` | Every PR that touches a package |
+| §B Fix Sequence | `@firm/architects` + `@firm/security` | Phase 1 sprint reviews |
+| §C Compliance Deadlines | `@firm/legal` + `@firm/architects` | Weekly until all four closed |
+| §D Roadmap | `@firm/architects` | Phase boundary reviews |
+| §E Workers | `@firm/platform` | Phase 3+ |
+| §F ADR Summary | `@firm/architects` | On every ADR merge |
+| §G SLOs | `@firm/devops` + `@firm/architects` | Phase 3 + quarterly |
+| §H Repository Checklist | `@firm/devops` | Phase 0 and Phase 3 |
+| §I CI Gate State | `@firm/platform` | Every gate activation |
+| §K L6 Gap Register | `@firm/architects` | Phase 3+ sprint planning |
+| §L Quick Reference | `@firm/architects` | Every new package merge |
+
+---
+
+## §N Critique Supplement — Additions Not Previously Captured
+
+This section records findings from UPDATE.md that are not yet reflected in any section of the Critique. These items must be written into the Critique in their appropriate Parts. Until that update occurs, this section is the authoritative source.
+
+---
+
+### N.1 Additions to Critique Part 1 — What the Architecture Gets Right
+
+The following items are confirmed as correct, non-negotiable decisions that must be preserved and appended to Critique Part 1:
+
+✅ **`firm-id` as a dedicated Layer 1 package** — UUID v7 (time-ordered for B-tree performance) as the platform-wide ID generation strategy, separated from `firm-primitives` (which defines types and gatekeepers, not generators). The ID format decision is irreversible once tables exist and must be locked before any schema is written.
+
+✅ **`firm-date` as a dedicated Layer 1 package** — UTC-enforced date arithmetic as a shared primitive, not ad-hoc per package. DST and clock-skew divergence in outbox retry scheduling, billing period calculation, and compliance retention clocks are eliminated by a single authoritative date utility.
+
+✅ **`firm-sanitize` as Layer 1, not Layer 3** — Pure defensive utility with no domain or auth dependencies. Placing it at Layer 1 avoids a layer-boundary smell (sanitisation is not a security policy decision — it is a defensive input transformation). Named policies (`strict`, `rich-text`, `email`, `cms`) ensure every consumer uses the same auditable ruleset.
+
+✅ **`firm-worker-runtime` as a first-class L6 Tier A package** — Workers are not raw Node.js processes. The shared `createWorker(options)` factory standardises graceful shutdown, K8s probes, metrics, and startup dependency checks across all 13 workers. Building even one worker without it produces a divergent operational contract.
+
+✅ **`firm-feature-gates` separated from `firm-flags`** — Permanent plan-based entitlements have a fundamentally different lifecycle from temporary rollout flags. Conflating them causes permanent entitlements to acquire expiry dates and triggers false CI failures on the flag expiration gate. Separation is a structural requirement, not a preference.
+
+✅ **Three-tier aggregate quota enforcement** — `checkQuota()` must enforce both the sub-account individual limit and the agency aggregate limit simultaneously. A sub-account exhausting the agency's shared pool must be rejected even if it has not reached its own limit. Single-level quota enforcement is architecturally incomplete for the three-tier hierarchy.
+
+✅ **Inherit-and-detach model for sub-account provisioning** — When a sub-account is created, the agency's defaults (branding, feature flags, quota assignments) are copied and then detached. Linking instead of copying causes parent modifications and deletions to propagate to children — a data integrity violation in the three-tier model.
+
+✅ **`SAGA_COMPENSATION_FAILED` as a distinct DLQ category** — Compensation step failures must not route to the same dead-letter queue as primary failures. Silent data corruption results when a failed compensation is treated as a failed primary operation. This is a structural property of the outbox + saga model, not a monitoring preference.
+
+---
+
+### N.2 Additions to Critique Part 3 — Critical Findings
+
+#### N.2.1 Critical Finding: Entitlement Conflation in `firm-flags`
+
+**Problem:** `firm-flags` conflates two categories of flags with incompatible lifecycle contracts:
+- **Temporary flags** (A/B tests, rollouts): must carry mandatory `expiresAt`; CI gate fails on expired flags; `false` after expiry.
+- **Permanent entitlements** (plan-based capabilities, feature gating by subscription tier): must never expire; carry no `expiresAt`; backed by `firm-subscriptions` data.
+
+The current design applies the same `expiresAt` enforcement to both categories. This causes permanent entitlements to either (a) require a sentinel `never` value that defeats the CI expiration gate, or (b) be incorrectly treated as expiring flags.
+
+**Fix:**
+1. Split into two packages: `firm-flags` (temporary, expiring, rollout flags only) and `firm-feature-gates` (permanent entitlements backed by subscription data).
+2. `firm-feature-gates` provides `checkEntitlement(tenantId, feature): boolean` backed by `firm-subscriptions` data, cached via `firm-cache`, invalidated on `subscription.plan.changed` event.
+3. `firm-feature-gates` emits `entitlement.gate.denied` for observability and billing alerts.
+4. All existing references to permanent feature capabilities in `firm-flags` are migrated to `firm-feature-gates` before Phase 3 build begins.
+
+---
+
+#### N.2.2 Critical Finding: `firm-notifications` Three-Level Preference Cascade
+
+**Problem:** Notification preferences have no defined enforcement model. The platform has three principals with different authority levels (platform, tenant/agency, user), each of which may restrict or expand notification delivery. Without an explicit cascade model, either:
+- Users receive notifications they have explicitly opted out of (GDPR/CNIL risk), or
+- Platform-mandated notifications are silently suppressed by user preferences.
+
+**Fix:**
+1. Define the three-level cascade as an immutable rule:
+   - **Level 1 (Platform default):** default channel and frequency per notification type.
+   - **Level 2 (Tenant override):** agency can restrict or expand platform defaults for all their users. Cannot grant capabilities beyond Level 1.
+   - **Level 3 (User choice):** user can opt down from tenant-resolved preferences only. Users cannot opt up above what Level 2 permits.
+2. `resolvePreference(tenantId, userId, notificationType, channel)` is the single evaluation function. No notification is dispatched without calling it.
+3. In-app notification persistence (read/unread store for dashboard bell icon) is a distinct concern from transient delivery. Both must be designed in the same PR.
+
+---
+
+#### N.2.3 Critical Finding: No Event Replay Capability
+
+**Problem:** The transactional outbox guarantees at-least-once delivery but provides no mechanism for replaying events after the fact. This gap has three direct consequences:
+1. **Debugging:** tracing a failed downstream operation requires correlating logs manually rather than replaying the event and observing the handler.
+2. **Compliance audits:** GDPR and SOC 2 require demonstrating that specific events occurred and were processed correctly. Without replay, audit evidence depends entirely on log retention.
+3. **CQRS read model rebuild:** if the `firm-db-read` schema is rebuilt (after a bug, a migration, or a new consumer), rebuilding from events is the correct approach. Without replay, the only option is full DB restore.
+
+**Fix:**
+1. `outbox_events` must retain completed events for a configurable window (default: 30 days). Hard-delete is not performed at completion — status changes to `completed`, `processed_at` timestamp recorded.
+2. `firm-bus` exposes `replayEvents(tenantId, fromTimestamp, toTimestamp, filter?)` — re-dispatches completed events to registered handlers.
+3. Replay runs in a separate execution context from the primary outbox worker; it does not compete for the live processing queue.
+4. Idempotency keys are honoured during replay — handlers receiving a replayed event with a previously-processed key return the cached result without repeating side effects.
+5. Replay access is gated by `bus:replay` RBAC permission + audit record in `firm-audit`.
+
+---
+
+#### N.2.4 Critical Finding: Incomplete `firm-reporting` Delivery Chain
+
+**Problem:** The three-package report delivery chain (`firm-reporting` → `firm-media` → `firm-notifications`) is not specified as an event contract anywhere. Without an explicit contract:
+- Each package is built with an assumed interface that diverges at integration time.
+- Signed URL expiry is not enforced consistently.
+- The report delivery SLO has no measurable endpoint.
+
+**Fix (event contracts to define before any package is built):**
 
 ```
-Form submit → validators → DB transaction (via firm-db-client):
-  ├─ INSERT leads (tenant_id via RLS)
-  └─ INSERT outbox_events ("lead.created", v1, traceId, tenantId, subAccountId)
+report.schedule.triggered
+  emitter: firm-bus (cron)
+  payload: { tenantId, reportType, parameters, scheduledFor }
 
-Outbox worker (firm-bus):
-  ├─ Handler1: firm-notifications.send(welcome_email)
-  ├─ Handler2: CRM adapter.createLead() → HubSpot
-  ├─ Handler3: firm-funnels.evaluateEntryTriggers("lead.created")
-  ├─ Handler4: firm-metering.recordUsage("leads.created", 1)
-  └─ Handler5: firm-audit.record("lead.created")
+report.computation.started
+  emitter: firm-reporting (on job pickup)
+  payload: { tenantId, reportId, reportType, startedAt }
+
+report.generated
+  emitter: firm-reporting (on completion)
+  payload: { tenantId, reportId, mediaId, signedUrl, expiresAt, format }
+
+report.delivery.requested
+  emitter: firm-reporting (consumed by firm-notifications)
+  payload: { tenantId, reportId, recipients, channel, signedUrl, expiresAt }
+
+report.delivered
+  emitter: firm-notifications (on confirmed delivery)
+  payload: { tenantId, reportId, deliveredAt, channel, recipient }
 ```
 
-**Packages involved:** `firm-landing-pages`, `firm-validators`, `firm-db-client`, `firm-bus`, `firm-notifications`, `adapters-crm-hubspot`, `firm-funnels`, `firm-metering`, `firm-audit`.
+All five contracts must be registered in `firm-events` before `firm-reporting`, `firm-media`, or `firm-notifications` is built in relation to scheduled reports.
 
 ---
 
-### 6.2 Scenario B: Payment Succeeded
+#### N.2.5 Critical Finding: No Backpressure Model for `firm-bus`
+
+**Problem:** The outbox worker has no defined backpressure mechanism. Under high load (e.g., bulk lead import generating 50,000 events), the worker attempts to dispatch all events at maximum concurrency. This produces:
+- Thundering herd on downstream handlers and adapters
+- Adapter rate limit exhaustion (resulting in retry storms)
+- Database connection pool saturation
+
+**Fix:**
+1. Define `concurrencyLimit` per worker and per event type in the `firm-bus` configuration.
+2. Expose `getConsumerLag()` as a health probe metric consumed by `firm-health` readiness checks and Grafana alerting.
+3. Consumer lag SLO: lag > 5 minutes → warning alert; lag > 10 minutes → high alert (triggers outbox delivery SLO breach).
+4. Backpressure triggers exponential increase in poll interval, not infinite retry at full concurrency.
+5. Load test scenario in `load-tests/` must exercise: 50,000 events enqueued in 60 seconds → verify p99 dispatch latency < 10 minutes.
+
+---
+
+### N.3 Additions to Critique Part 11 — ADR Backlog
+
+The following ADRs were identified in UPDATE.md but are not yet in Critique Part 11. They must be added.
+
+---
+
+**ADR-013: `firm-analytics` Scope**
+
+- **Problem:** `firm-analytics` is provisionally accepted in Tier D (Decision 13) but its scope relative to `firm-reporting` is undefined. `firm-reporting` covers structured business reports; `firm-analytics` potentially covers raw event tracking, cohort analysis, and product analytics. Without a defined boundary, the two packages will accumulate overlapping responsibilities.
+- **Options:**
+  - **A — `firm-analytics` is product analytics only** (PostHog-style: event tracking, funnels, cohorts, feature adoption). `firm-reporting` handles business intelligence (revenue, leads, campaigns).
+  - **B — `firm-analytics` is eliminated.** Product analytics is delegated to `adapters-analytics-posthog` directly, consumed by `firm-reporting` via the outbox.
+  - **C — `firm-analytics` is a thin facade** over pluggable analytics adapters, providing a tenant-isolated tracking API (`track(event, properties)`).
+- **Default recommendation:** C — thin facade pattern, consistent with Port-and-adapter architecture. Prevents direct adapter imports from Layer 6 features.
+- **Impact if delayed:** `firm-reporting` and `firm-analytics` both accumulate tracking logic with no defined boundary.
+
+---
+
+**ADR-014: `firm-calls` Scope and VoIP Provider Strategy**
+
+- **Problem:** Voice capabilities (call initiation, recording, transcription, ringless voicemail, call tracking numbers) require a defined adapter strategy before `firm-calls` can be built. Twilio dominates but Aircall and Vonage serve distinct agency verticals.
+- **Options:**
+  - **A — Twilio-first with abstract `VoIPPort`.** `adapters-voip-twilio` as the first implementation; `adapters-voip-aircall` and `adapters-voip-vonage` follow the same Port.
+  - **B — Twilio-only.** Simpler, but locks the platform to a single provider for voice.
+- **Default recommendation:** A — consistent with Port-and-adapter pattern across all 105 adapters.
+- **Impact if delayed:** `firm-calls` cannot define its Port interface; no VoIP adapter can be scaffolded.
+
+---
+
+**ADR-015: `firm-forms-utils` Location**
+
+- **Problem:** RHF + Zod integration utilities and multi-step form state machines are needed by both `firm-ui` (visual components) and `firm-forms` (Layer 6 conditional logic engine). A Layer 5 package could be consumed by both; placing it in `firm-ui` as a sub-export forces `firm-forms` to depend on the UI layer unnecessarily.
+- **Options:**
+  - **A — Standalone `firm-forms-utils` package (Layer 5).** Both `firm-ui` and `firm-forms` import from it. No circular dependency.
+  - **B — `@firm/ui/forms-utils` sub-export.** `firm-forms` (L6) must import from L5 `firm-ui`. Technically valid (L6 may import L5), but semantically odd — a business logic package depending on a UI package for form state management.
+- **Default recommendation:** A — standalone, to keep the dependency semantics clean and avoid coupling `firm-forms` to `firm-ui`.
+- **Impact if delayed:** `firm-forms` (Phase 6) must re-implement RHF integration, producing a second divergent validator/state-machine pattern.
+
+---
+
+**ADR-016: `firm-motion` Animation Strategy**
+
+- **Problem:** Token-backed animations (branded transitions, micro-interactions) are required by the portal, landing pages, and funnel UI. Two viable approaches exist with significant bundle size implications.
+- **Options:**
+  - **A — `framer-motion`.** Declarative, powerful, well-supported. ~40KB gzipped. Adds to every page's bundle.
+  - **B — CSS-only keyframes with CSS custom properties.** Zero JS bundle cost. Uses `firm-tokens` duration/easing tokens as CSS variables. Less expressive for complex sequence animations.
+- **Default recommendation:** B for Phase 6 launch; A as an opt-in enhancement for Tier D packages that require complex animation (portals, proposals). Evaluated per-package, not platform-wide.
+- **Impact if delayed:** `firm-ui` components use hard-coded `transition` values not sourced from `firm-tokens`; white-label branding cannot control animation timing.
+
+---
+
+**ADR-017: `firm-chatbot` AI Runtime**
+
+- **Problem:** The no-code chatbot builder can run conversations via two mechanisms: (a) pattern-matching FAQ engine (deterministic, auditable, cheap), or (b) LLM-driven intent recognition (flexible, expensive, non-deterministic). The choice determines the conversation runtime, cost model, and human-approval requirements.
+- **Options:**
+  - **A — FAQ pattern-matching engine first.** Deterministic, low cost, no AI governance overhead. LLM fallback as an opt-in upgrade.
+  - **B — LLM-first.** Richer conversations but requires: `checkQuota()` on every turn, C2PA-adjacent content governance, human-approval for published conversation flows.
+- **Default recommendation:** A with LLM upgrade path. All conversation output is still gated by human approval of the published flow regardless of runtime.
+- **Impact if delayed:** `firm-chatbot` (Phase 6) cannot define its execution model or quota dimensions.
+
+---
+
+### N.4 Additions to Critique Part 2 — Resolved Decisions
+
+The following items from UPDATE.md represent resolved decisions that must be appended to Critique Part 2 as numbered entries (continuing from Decision 25):
+
+| # | Decision | Resolution |
+|---|----------|------------|
+| 26 | `firm-resilience` package status | **Retired.** Circuit-breaker, bulkhead, and timeout patterns are implemented within `firm-circuit-breaker` at Layer 1 as named policies. No separate Layer 4 `firm-resilience` package exists. |
+| 27 | `firm-kpi` location in layer hierarchy | **Layer 6, Tier D** — not Layer 4. `firm-kpi` provides KPI definitions, `registerKpi()` IoC, and time-bucketed aggregation for `firm-reporting`. Low-level telemetry remains in `firm-observability` (Layer 4). |
+| 28 | `firm-flags` scope boundary | **`firm-flags` retains only temporary, expiring rollout flags.** Permanent plan-based entitlements move to `firm-feature-gates` (Layer 6, Tier A). The `never` sentinel marker in `firm-flags` is retired. |
+| 29 | `firm-worker-runtime` package status | **First-class Layer 6, Tier A package.** Not a utility module embedded in individual workers. All 13 workers must use `createWorker(options)` from `firm-worker-runtime`. No exceptions. |
+| 30 | Quota enforcement hierarchy | **Three-tier aggregate enforcement is mandatory.** `checkQuota()` enforces sub-account individual limit AND agency aggregate limit simultaneously. Sub-account exhausting agency pool is rejected regardless of individual quota remaining. |
+| 31 | Sub-account provisioning model | **Inherit-and-detach.** Agency defaults (branding, flags, quotas) are copied to sub-account at creation time, then detached. Linking is prohibited. |
+| 32 | Event replay capability | **Required as part of `firm-bus` specification.** `outbox_events` retains completed events for 30 days. `replayEvents()` is a first-class `firm-bus` API. Replay is idempotency-safe. |
+| 33 | `SAGA_COMPENSATION_FAILED` DLQ | **Distinct DLQ category required.** Compensation failures must not route to the primary failed-event DLQ. Separate alert routing, separate runbook. |
+| 34 | `touchpoint.recorded` event | **Standard event required before any of `firm-funnels`, `firm-ads`, or `firm-social` is built.** Registered in `firm-events`. Used for multi-touch attribution in `firm-reporting`. |
+| 35 | Social listening assignment | **`firm-reputation` owns social listening** via `social.mention.received` event consumed from `firm-social`. `firm-social` emits; `firm-reputation` processes. No duplicate monitoring logic. |
+
+---
+
+### N.5 Additions to Critique Part 8 — Governance & Developer Experience
+
+#### N.5.1 Complete `firm-testing` Internal API
+
+The following is the authoritative target API for `firm-testing` (`@firm/testing`), compiled from UPDATE.md. This must be captured in the Critique's governance section as the test infrastructure contract.
 
 ```
-Stripe webhook → firm-payments webhook handler:
-  ├─ Verify signature (constant‑time, via firm-crypto)
-  ├─ Idempotency check
-  ├─ Update invoice status → "paid" (via firm-db-client)
-  └─ INSERT outbox_events ("invoice.paid", v1)
+firm-testing/src/
+  harnesses/
+    createUnitHarness.ts          # PGLite + ioredis-mock; pool: 'forks' default
+    createIntegrationHarness.ts   # real DB + Redis; tenant isolation fixtures
+    createE2eHarness.ts           # Playwright page factory + auth helpers
+    createServerComponentHarness.ts  # async RSC render path (React 19)
+    createOutboxHarness.ts        # in-memory outbox; assert events emitted
 
-Outbox worker (firm-bus):
-  ├─ firm-notifications.send(payment_receipt)
-  ├─ firm-reporting.invalidateCache("revenue")
-  ├─ firm-subscriptions.reconcilePayment(invoice)
-  ├─ firm-billing.recognizeRevenue(invoice)
-  ├─ firm-metering.recordUsage("revenue.collected", amount)
-  └─ firm-audit.record("invoice.paid")
+  fixtures/
+    createTenantIsolationFixture.ts  # sibling isolation + parent visibility
+    createTenantFixture.ts           # Platform → Agency → Sub-Account hierarchy
+    createUserFixture.ts             # user + session + RBAC
+    createSessionFixture.ts          # frozen SessionContext builder
+    createAdapterFixture.ts          # stubbed by Port mock (createPortMock<T>)
+    mockRequestContext.ts            # AsyncLocalStorage stub
+    mockFeatureFlags.ts              # flag evaluation override
+
+  factories/
+    createLeadFactory.ts             # satisfies firm-validators leadSchema
+    createCampaignFactory.ts
+    createTenantFactory.ts
+    createAuditEntryFactory.ts
+    createOutboxEventFactory.ts
+
+  utils/
+    withTheme.ts                     # wraps component in ThemeProvider
+    expectNoA11yViolations.ts        # axe-core matcher (AccessLint)
+    createTestLogger.ts              # in-memory log capture; log.assert()
+    createVitestProject.ts           # Vitest 3.2+ composite build factory
+    mockAdapters.ts                  # createPortMock<T extends Port>()
+
+  index.ts                           # barrel; named sub-exports only
 ```
 
-**Packages involved:** `firm-payments`, `firm-db-client`, `firm-bus`, `firm-notifications`, `firm-reporting`, `firm-subscriptions`, `firm-billing`, `firm-metering`, `firm-audit`.
+**Rules:**
+- Zero production artifacts. `firm-testing` must appear only in `devDependencies`.
+- `createUnitHarness()` always sets `pool: 'forks'` — never `threads` — for packages with singleton state (`firm-request-context`, `firm-observability`). This is not configurable.
+- All fixture factories produce values that satisfy `firm-validators` schemas. Compile-time `satisfies` check required.
+- `createTestLogger()` is the only permitted logger in tests. `console.log` in tests is banned by ESLint.
 
 ---
 
-### 6.3 Scenario C: Tenant Provisioning (Agency Creates Sub‑Account)
+#### N.5.2 Complete `firm-ui` Sub-Export Structure
 
-```
-Agency admin → firm-auth.requirePermission("tenant:create") → firm-provisioning.createTenantSaga()
-  ├─ Step1: INSERT tenants (type=sub_account, parent_tenant_id=agencyId) via firm-db-client
-  ├─ Step2: firm-flags.assignPlanDefaults(tenantId, "starter")
-  ├─ Step3: firm-tenant-config.seedDefaultConfig(tenantId)
-  ├─ Step4: firm-auth.createDefaultAdminUser(tenantId)
-  ├─ Step5: firm-notifications.send(welcome_new_account)
-  ├─ Step6: firm-audit.record("tenant.created")
-  ├─ Step7: CRM adapter.createCompany(tenantData)
-  └─ (any step fails → compensate in reverse via saga state in firm-db-schema)
-```
+The following is the authoritative target sub-export map for `firm-ui`, compiled from UPDATE.md. Must be captured in Critique Part 8 before Phase 6 begins.
 
-**Packages involved:** `firm-provisioning`, `firm-db-client`, `firm-flags`, `firm-tenant-config`, `firm-auth`, `firm-notifications`, `firm-audit`, `firm-bus`, `adapters-crm-hubspot`.
+| Sub-export | `react-server` condition | Contents |
+|------------|------------------------|---------|
+| `@firm/ui/primitives` | Both (`react-server` + default) | Button, Input, Select, Badge, Avatar, Switch, Checkbox, Radio, Textarea, Label, Tooltip, Popover |
+| `@firm/ui/composed` | Client only | Form, Modal, Drawer, Toast, Table, Tabs, Combobox, CommandPalette, DatePicker, FileUpload |
+| `@firm/ui/layout` | Server-safe | Page, Sidebar, Topbar, Container, Grid, Stack, Divider, Spacer |
+| `@firm/ui/dataviz` | Client only | Nivo chart wrappers; isolated chunk; own peer deps; `sideEffects: false` |
+| `@firm/ui/marketing` | Server-safe | Hero, CTA, PricingCard, FeatureGrid, Testimonial, LogoCloud |
+| `@firm/ui/icons` | Server-safe | Curated Lucide + custom SVGs; RSC-safe; `sideEffects: false` |
 
----
-
-### 6.4 Scenario D: GDPR Right‑to‑Erasure
-
-```
-Data subject request → firm-compliance.requestErasure()
-  ├─ Phase1 (immediate): firm-db-client.anonymisePII(names, emails, phones, IPs)
-  │   └─ firm-audit.record("erasure.anonymised")
-  ├─ firm-compliance.generateDataExport() → stored in firm-media → download link sent
-  ├─ firm-bus.schedule("hardDelete", { dataSubjectId }, { delay: 30d })
-  └─ firm-notifications.send(erasure_confirmed)
-
-30 days later → bus executes hard‑delete job → firm-audit.record("erasure.hard_deleted")
-```
-
-**Packages involved:** `firm-compliance`, `firm-db-client`, `firm-bus`, `firm-audit`, `firm-media`, `firm-notifications`, `firm-auth`.
+**CI gate:** No file in a `react-server`-marked export may contain `useState`, `useEffect`, `useContext`, or event handlers. ESLint rule in `firm-config-eslint` enforces this. Build fails on violation.
 
 ---
 
-### 6.5 Scenario E: Quota Enforcement Flow (New)
-
-Illustrates the mandatory `checkQuota()` call before any metered operation. This pattern must be enforced in every feature package that consumes billable resources.
-
-```
-User initiates chargeable action (e.g., AI content generation) →
-  firm-ai-content calls firm-metering.checkQuota(tenantId, "ai_tokens", estimatedTokens)
-
-If quota exceeded:
-  → return QuotaExceeded error (displayed to user, no resources consumed)
-  → firm-metering emits metering.quota.exceeded event
-  → firm-notifications may alert agency admin
-
-If quota allowed:
-  → execute generation (tokens consumed)
-  → firm-metering.recordUsage("ai_tokens", actualTokens)
-  → if usage now ≥ 80% of plan limit:
-      → emit metering.quota.warning event
-      → firm-notifications.send(quota_warning) to agency admin
-  → firm-audit.record("ai.content_generated")
-```
-
-**Packages involved:** `firm-ai-content`, `firm-metering`, `firm-notifications`, `firm-audit`, `firm-db-client`.
-
-**CI enforcement:** Static analysis gate detects any metered operation that lacks a preceding `checkQuota()` call and fails the build.
-
----
-
-### 6.6 Scenario F: Chaos Recovery Flows (New)
-
-#### F1 — Rate Limiter Fails Open (Redis Unreachable)
-
-```
-Request hits rate-limited endpoint →
-  firm-rate-limiter.consume(policyName, tenantId, tokens)
-  → Redis connection fails (connection refused / timeout)
-  → Log CRITICAL: "Rate limiter Redis unavailable, failing open"
-  → fire firm-observability alert (RateLimiterRedisDown)
-  → allow request to proceed (fail‑open, never blocks business operations)
-  → emit firm-rate-limiter.degraded event
-  → firm-kpi records degradation metric
-```
-
-**Guarantee verified by chaos test:** `chaos/scenarios/redis-down.ts` (Toxiproxy blocks Redis port; asserts that requests succeed and the alert fires).
-
-#### F2 — Outbox Worker Crash (Exactly‑Once Delivery)
-
-```
-Outbox worker picks event "lead.created" (idempotencyKey: evt_123) →
-  begins processing Handler1 (notifications) successfully →
-  worker crashes mid‑processing before Handler2 (CRM adapter)
-  → event remains in outbox with status "processing" and lease timeout
-
-Firm-bus detects lease expiry →
-  re‑delivers event to a new worker instance
-  → idempotency check on "evt_123" ensures Handler1 is NOT re‑executed
-  → continues from Handler2 (CRM adapter) onward
-  → marks event "completed"
-```
-
-**Guarantee verified by chaos test:** `chaos/scenarios/outbox-worker-crash.ts` (Toxiproxy or process signal kills worker mid‑batch; asserts no duplicate leads in CRM and all handlers eventually complete).
-
----
-
-### 6.7 Context Propagation Across Workers
-
-Trace path: **Browser → API Gateway → Next.js** (gen/extract traceId, tenantId, subAccountId) → **Outbox event** (metadata carries traceId, correlationId, tenantId, subAccountId, version) → **Worker** (`setRequestContext()` restores) → **Adapter** (`injectTraceContext()` adds `traceparent`) → **External service**.
-
-All background services in `workers/` (renamed from `services/`) must call `setRequestContext()` at job start, using the `withRequestContext()` wrapper provided by `firm-request-context` for Inngest, BullMQ, or custom job handlers. This wrapper eliminates the risk of `AsyncLocalStorage` context loss at async boundaries.
-
-For OpenTelemetry spans, all feature packages and workers must use `withTenantSpan()` from `firm-observability` — this automatically attaches `tenant.id`, `user.id`, and `correlation.id` as span attributes, ensuring tenant‑level visibility in traces without developers manually adding attributes.
-
----
-
-### 6.8 Cross‑Package Data Dependencies (Post‑Phase 1 Target State)
-
-This table reflects the architecture after all splits, extractions, and renames. It replaces the previous version in its entirety.
-
-| Consumer | Data needed | Producer | Mechanism |
-|----------|-------------|----------|-----------|
-| reporting | lead counts, revenue, ad perf | db-client (read‑schema), ads, metering | direct query (read pool) + adapter sync |
-| portal | projects, docs, reports, invoices | projects, documents, reporting, billing | aggregation API per tenant |
-| funnels | leads, email events | db-client (leads), notifications (webhooks) | webhook + direct query |
-| ai-content | content generation prompts, brand voice | ai (model routing), db-client | API call via ai adapter |
-| ai | lead scoring data, personalisation inputs | db-client (leads, conversion events) | direct query; analytical – no approval gate |
-| cms | media assets | media | presigned URL |
-| landing‑pages | content blocks | cms | API call + cache |
-| social | images/videos | media | presigned URL |
-| ads | creative assets | media | asset library |
-| reputation | sentiment analysis | ai (analytical), ai-content (generative for response suggestions) | AI adapter call; response suggestions gated by human approval |
-| webhooks | event payloads | all features (via outbox) | outbox → bus → webhooks |
-| metering | usage counters | all features (meter events) | outbox → bus → metering |
-| audit | write operations | all features (audit events) | outbox → bus → audit |
-| subscriptions | quotas, usage | metering (live), flags | direct API call |
-| billing | invoice lines | subscriptions, payments, metering | aggregation query |
-| compliance | erasure/export data | db-client, audit, consent | direct query + saga |
-| provisioning | tenant lifecycle | flags, tenant‑config, auth, billing | saga via bus |
-| integrations | adapter health | all adapters | health check API |
-| inbox | inbound messages | email, sms, social, chat adapters | webhook → outbox → handler; social DMs via `social.dm.received` event |
-| workflow | trigger events | documents, appointments, projects | outbox events |
-| rate‑limiter | policy definitions, plan tiers | flags (plan defaults), subscriptions (entitlements) | evaluated at request time; never stores limit values inline |
-| kpi | business metrics | metering, ads, reporting, subscriptions | direct query + adapter sync; anomaly detection alerts |
-
-**Each dependency must have an integration test before the consumer package is marked complete.**
-
----
-
-## Section 7: Implementation Roadmap
-
-**Two parts:** (A) Phase 1 Foundation Hardening — resolve all critical bugs, structural splits, and developer experience blockers. (B) Phased construction of missing packages (Phases 2‑8).
-
-No new feature package is built until Phase 1 is complete and all acceptance criteria are verified.
-
----
-
-### 7.1 Phase 1: Foundation Hardening (Weeks 1‑3)
-
-Phase 1 has four objectives:
-1. Fix every critical bug in existing packages.
-2. Extract `firm-rate-limiter` and split `firm-db` into schema + client.
-3. Add `checkQuota()` enforcement to `firm-metering`.
-4. Create `adapters-storage-local` and the `load-tests/` and `chaos/` infrastructure.
-
-**All existing critical fixes from the original Assessment are retained and re‑numbered where necessary.** New actions are appended starting at Fix 11.
-
-| Fix | Package(s) | Action | Depends on | Blocks |
-|-----|-----------|--------|------------|--------|
-| 1 | `firm-cache` | Fix `TenantCache.set` TTL signature ambiguity – add runtime validation (throw on non‑number), JSDoc, unit test | – | Fix 2a |
-| 2a | `firm-security` | Fix rate limiter import (`CacheClient` → `TenantCache`); fix `set()` call to pass numeric TTL; add unit test with mock | Fix 1 | Fix 3 |
-| 2b | `firm-rate-limiter` (new) | Extract rate‑limiter into standalone L3 package: Redis sliding window, token bucket, plan‑tier‑aware limits, dry‑run mode, fail‑open. Write full test suite. | Fix 2a, `firm-cache` | `firm-auth` MFA rate limiting |
-| 3 | `firm-auth` | Change `SessionContext.role` type to `Role`; remove deprecated `startImpersonationLegacy`; update guards; direct dependency on `firm-rate-limiter` for MFA/API key rate limiting | Fix 2a, Fix 2b | – |
-| 4 | `firm-validators` | Add missing campaign imports; rewrite lead v1↔v2 migrations to use existing fields only; add factory functions (`createPaginationSchema`, `createTenantScopedSchema`, `createVersionedSchema`); add comprehensive unit tests | – | All feature packages |
-| 5 | `firm-db` (pre‑split) | Move outbox import to top; replace `any` with `PgTable` in `softDelete`; update Drizzle RLS API from deprecated `.enableRLS()` to `pgTable.withRLS(...)`; add migration test | – | – |
-| 6 | `firm-request-context` | **Add comprehensive unit + integration tests** (nested async, concurrent contexts). **Replace `[key: string]: any` with module augmentation** – packages declare context extensions in their own `.d.ts` files. Add `withRequestContext()` wrapper for Inngest/BullMQ job handlers. | – | All packages above L1 |
-| 7 | `firm-observability` | Remove or undeprecate `logger.ts` re‑export; add `resetForTesting()`; add integration tests for `initializeObservability`, `withSpan`, `withTenantSpan`, `captureError`, `createTenantMeter` | stable `firm-logger` | Production observability |
-| 8 | `firm-primitives` | Create new package; move branded IDs (`TenantId`, `UserId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`), gatekeepers, helper types from `firm-types`; update all imports; add gatekeeper unit tests | – | Layer boundary enforcement |
-| 9 | `firm-logger` | Remove `ContextManager` internal `currentContext`; read only from `getUnifiedContext()`; add concurrent async test; add `logger.child(bindings)`, configurable sampling, `createTestLogger()` | Fix 6 | All logging & tracing |
-| 10 | `firm-health` | Implement `observabilityHealthCheck()` in readiness probe; replace `setInterval` with recursive `setTimeout` in synthetic runner; add event‑driven health check registration; add unit tests | stable `firm-observability` | Three‑pillar enforcement |
-| 11 | `firm-metering` | Add `checkQuota(tenantId, dimension, amount): Promise<Result<QuotaAllowed, QuotaExceeded>>` as primary API; add 80% quota warning event; add `getUsageSummary(tenantId, period)`; add CI static analysis gate detecting metered operations without preceding `checkQuota()` call | – | All metered feature packages |
-| 12 | `firm-request-context` (design) | *(Covered by Fix 6 — module augmentation replaces index signature; included here for visibility.)* | – | – |
-| 13 | `adapters-storage-local` (new) | Create local storage adapter implementing `StoragePort` with filesystem backend; unblocks all local development for media features | – | `firm-media` local development |
-| 14 | `firm-db` split (structural) | Split `firm-db` into `firm-db-schema` (L2, Drizzle schemas, RLS policies, migrations) and `firm-db-client` (L2, connection factories, outbox helpers, pagination, PgBouncer RESET wrapper). Update all existing consumers. Document CQRS read model home (Option B: subdirectory with CODEOWNERS, unless ADR chooses Option A). | Fix 5 | All Phase 2 infrastructure packages |
-| 15 | `firm-testing` rename | Rename `firm-test-utils` → `firm-testing`; expand scope: PGLite harness, ioredis‑mock, `createUnitHarness()`, `createIntegrationHarness()`, `createE2eHarness()`, `createTenantIsolationFixture()`, `mockAdapter<T>()`, `createOutboxHarness()` | – | All future testing |
-| 16 | `load-tests/` + `chaos/` | Create `load-tests/` directory with k6 structure and three baseline scenarios (outbox throughput, tenant isolation under concurrent load, rate‑limit holding). Create `chaos/` directory with Toxiproxy structure and three baseline scenarios (Redis‑down fail‑open, outbox worker crash recovery, PgBouncer eviction). Create `firm-config-k6` Layer 0 config package. | Phase 1 fixes complete | Verifying platform guarantees before Phase 2 completion |
-| 17 | Root files | Create `SECURITY.md` (vulnerability disclosure, security contact, response SLA) and `CONTRIBUTING.md` (PR process, branch naming, test requirements, ADR proposal process). | – | SOC 2 readiness, developer onboarding |
-| 18 | `infra/` regional structure | Partition `infra/` into `infra/regions/us-east-1/`, `infra/regions/eu-west-1/`, and `infra/shared/` (Cloudflare, monitoring). | – | GDPR data residency before EU infrastructure provisioned |
-
----
-
-**Phase 1 Acceptance Criteria:**
-
-- `tsc --noEmit` passes across all packages.
-- `vitest run` passes with ≥80% unit/integration coverage for Layers 1‑4.
-- `firm-primitives` exists standalone; no L0 types imported from `@firm/types`.
-- `firm-db-schema` and `firm-db-client` exist as separate packages; all consumers updated.
-- `firm-rate-limiter` extracted and fully tested (sliding window, token bucket, dry‑run, fail‑open).
-- `firm-security` rate limiter code removed; remaining CSP/CSRF/headers tests pass.
-- `firm-validators` migration tests pass; factory functions tested.
-- `firm-logger` has no internal context store; concurrent async test passes.
-- `firm-request-context` has no `[key: string]: any`; module augmentation design verified; 0% test gap closed.
-- `firm-health` readiness probe includes OTel check; synthetic runner uses `setTimeout` with error recovery.
-- `firm-metering.checkQuota()` implemented and enforced by CI gate.
-- `adapters-storage-local` functional with `StoragePort` conformance test.
-- `load-tests/` and `chaos/` directories exist with all baseline scenarios passing.
-- `SECURITY.md` and `CONTRIBUTING.md` present at repository root.
-- `infra/` partitioned with regional subdirectories.
-- All 18 Phase 1 actions verified by tests or manual checklist.
-
----
-
-### 7.2 Phased Construction Roadmap (Phases 2‑8)
-
-#### Phase 2: Infrastructure Foundation (Weeks 4‑9) — 17 packages
-
-**Prerequisite:** `firm-db-schema` + `firm-db-client` split complete. `firm-bus` ADR resolved (Inngest vs. custom outbox). `firm-types` shared kernel ADR written.
-
-**Build order (sequential):** bus → flags → metering → audit → i18n → template‑engine → media → tenant‑config → payments → notifications → webhooks → search → sdk → migrations → seed → sse → kpi
-
-**Key deliverables:**
-- Outbox processor processes events, retries, cron scheduler, sagas (ordered option for per‑tenant sequence numbers)
-- Feature flag evaluation with expiration enforcement and circuit breaker for Redis unavailability
-- Usage counter aggregation & `checkQuota()` enforcement API
-- Immutable cryptographically chained audit log with `queryAuditLog()` and `exportAuditLog()`
-- Localisation with timezone‑aware formatting, RTL support, ICU MessageFormat pluralisation
-- Template rendering with versioning and preview API (Liquid for email/SMS, Handlebars for PDF — ADR pending)
-- File storage with image transformation pipeline (WebP/AVIF, `srcset`), deduplication, CDN cache invalidation
-- Per‑tenant config resolution (branding, features), plan‑default merging, versioning with rollback
-- Stripe checkout & webhook handling, payment method management, split payment support
-- Multi‑channel notifications with digest batching, per‑channel retry policy, in‑app unread count
-- Outbound webhook delivery with retry, signing, subscription management, test ping, mutual TLS
-- Full‑text search with tenant isolation enforced at application layer (RLS as safety net; ADR for engine)
-- TypeScript client SDK with `FirmClient.withTenant()`, node/browser exports, `verifyWebhookSignature()`
-- Migration runner & drift check
-- Deterministic seed data (dev/test)
-- Server‑Sent Events delivery channel for real‑time updates
-- Business KPI telemetry & anomaly alerts (revenue, lead conversion)
-
-**Acceptance:**
-- All 17 packages compile & pass tests.
-- `firm-bus` processes outbox events; ordered delivery works within a tenant.
-- `firm-metering` enforces quotas via `checkQuota()`; 80% warning event fires.
-- `firm-payments` creates Stripe session & handles webhook idempotently.
-- `firm-search` indexes 10k records <200ms; cross‑tenant queries return zero results.
-- Load test scenarios for outbox throughput and tenant isolation pass SLO thresholds.
-
----
-
-#### Phase 3: Adapter Packages (Weeks 6‑20, parallel with Phases 2‑5) — 105 adapters
-
-**Build sequence:** High‑priority adapters first (22), then medium, then low. Critical missing adapters built immediately: `adapters-storage-local` (already done in Phase 1), `adapters-pdf-generator-puppeteer`, `adapters-ai-image-openai`, `adapters-videoconferencing-zoom`, `adapters-email-validation-zerobounce`.
-
-**Each adapter** implements its Port interface from `firm-types`, lazy‑initialises from environment, transforms between canonical types and provider formats, maps errors to `FirmError` subtypes, exports standardised metrics, and handles webhooks with constant‑time signature verification and idempotency.
-
-**Governance:** Every adapter generated by scaffolding tool (not hand‑authored) — verified by CI Gate 13. Stub and conformance test generated simultaneously. `packages/layer7-adapters/REGISTRY.md` auto‑generated and committed.
-
-**Acceptance:** Webhook signature verification passes for each adapter; provider ↔ canonical type mapping correct; stubs exist and compile; REGISTRY.md is current.
-
----
-
-#### Phase 4: Operations Layer (Weeks 10‑14) — 8 packages (Tier B)
-
-**Order:** provisioning → compliance → projects → sales‑pipeline → documents → appointments → workflow → integrations
-
-**Key deliverables:**
-- Tenant lifecycle saga (create/upgrade/offboard) with dry‑run mode and provisioning health check
-- GDPR erasure (2‑phase) & data export; Article 30 report generation; data residency enforcement check
-- Project/task management, kanban, time tracking (billable/non‑billable), client‑visible vs. internal tasks
-- Deal pipeline stages & forecasting; lead score integration; automated stage transitions
-- PDF generation & e‑signature (multi‑signatory with order); collaborative review; document analytics
-- Booking pages & calendar sync; buffer time; group appointments; no‑show policies
-- Internal workflow automation (contract→project→email) — **ADR required for condition model before build**
-- Unified integration dashboard with health scoring (not binary) and self‑healing OAuth token refresh
-
-**Acceptance:** Agency admin can create sub‑account via saga; erasure request anonymises PII immediately; workflow triggers on document signed; integration health score reflects real status.
-
----
-
-#### Phase 5: Revenue Packages (Weeks 13‑16) — 2 packages (Tier C)
-
-**Order:** subscriptions → billing
-
-**Key deliverables:**
-- Plan definition, upgrades/downgrades, trial management, grace periods, grandfathering, subscription event stream
-- Invoicing (line items from usage), revenue recognition, dunning, multi‑currency with exchange rates, tax jurisdiction detection (EU VAT OSS), aging reports
-
-**Acceptance:** Upgrade tenant plan → prorated invoice generated; failed payment triggers dunning email series; grace period prevents immediate lockout.
-
----
-
-#### Phase 6: Client‑Facing & Marketing Execution (Weeks 15‑22) — 11 packages (Tier D)
-
-**Order:** reporting → cms → forms → landing‑pages → funnels → social → seo → reputation → ads → ai → ai‑content → inbox
-
-**Key deliverables:**
-- Branded PDF reports (multi‑source metrics), report scheduling, shareable links, CQRS read model with ESLint‑enforced write boundary
-- Content delivery API with edge caching, content staging, SEO metadata management, multilingual fallback
-- Form builder (conditional logic, multi‑step, partial save, field‑level abandonment analytics, CRM field mapping validation)
-- Landing page renderer (A/B tests, Core Web Vitals tracking, conversion pixel management, consent‑gated scripts)
-- Multi‑step funnel engine (cross‑channel, analytics, pausing)
-- Cross‑platform social scheduling with social listening; outbound only — inbound DMs route to `firm-inbox`
-- Rank tracking, technical SEO crawl, schema markup management, SERP feature detection
-- Review monitoring, competitor tracking, response time SLA monitoring, AI response suggestions (human‑approval gated)
-- Ad performance aggregation (Google, Meta), UTM management, creative performance, ad fatigue detection
-- **`firm-ai`** — AI provider client management, token counting, cost metering, model routing, rate limiting; lead scoring and personalization (analytical, no approval gate)
-- **`firm-ai-content`** — content generation with human‑approval gate enforced, C2PA manifest generation (Aug 2 deadline), NY Synthetic Performer disclosure (Jun 9 deadline), content moderation, brand voice enforcement
-- Unified conversation inbox (all channels), assignment/routing, SLA tracking
-
-**Acceptance:** Form submission triggers funnel; AI content cannot be published without explicit human approval; 1‑star review triggers alert; consent‑gated pixels fire only after marketing consent confirmed.
-
----
-
-#### Phase 7: Client Portal (Weeks 21‑24) — 1 package
-
-`firm-portal` — aggregates projects, documents, reports, invoices, campaign data for sub‑account users. White‑label domain configuration, per‑sub‑account module toggling, portal activity audit log.
-
-**Acceptance:** Client user sees only own sub‑account data; agency admin sees all sub‑accounts; file sharing & approval workflows functional.
-
----
-
-#### Phase 8: Applications (Weeks 24‑30) — 22 apps (or grouped per ADR)
-
-**ADR required:** 22 separate apps vs. 3‑5 grouped apps vs. unified application. Recommend hybrid 3‑5 grouped apps: `platform-core` (CRM, projects, billing), `platform-marketing` (SEO, ads, social, content), `platform-portal` (client‑facing), `platform-admin`, `firm-site`.
-
-**Client sites (`apps/clients/`):** ADR required — ephemeral generation recommended (config committed, code generated on deploy). No client‑specific code committed to the repository.
-
-**Acceptance:**
-- All apps deployed, tenant isolation enforced, consent respected.
-- Marketing site captures leads → CRM, metering, audit.
-- Client portal provides complete branded experience.
-- Client site generation produces a working site from `apps/clients/config/<slug>.json`.
-
----
-
-### 7.3 Phase Completion Summary (Revised)
-
-| Phase | Packages / Actions | Weeks | Status |
-|-------|-------------------|-------|--------|
-| 1 (Hardening) | 23 existing + 18 fixes/structural actions | 1‑3 | ☐ Not started |
-| 2 (Infrastructure) | 17 new | 4‑9 | ☐ Not started |
-| 3 (Adapters) | 105 new | 6‑20 (parallel) | ☐ Not started |
-| 4 (Operations) | 8 new | 10‑14 | ☐ Not started |
-| 5 (Revenue) | 2 new | 13‑16 | ☐ Not started |
-| 6 (Client‑Facing) | 11 new | 15‑22 | ☐ Not started |
-| 7 (Portal) | 1 new | 21‑24 | ☐ Not started |
-| 8 (Applications) | 22 apps (or grouped) | 24‑30 | ☐ Not started |
-
-**Overall platform completion (post‑Phase 1):** 23 of ~187 packages built (12.3%). No business capabilities or user‑facing apps exist yet.
-
----
-
-## Section 8: Progress Tracker & Status Dashboard
-
-**Legend:** `✅`=ready, `⚠️`=partial/needs work, `❌`=broken/not built, `L#`=Layer, `P#`=Phase, `Fix N`=critical fix.
-
----
-
-### 8.1 Existing Foundation Packages (Layers 0‑4) – 23 packages → Phase 1 target
-
-| # | Package | Layer | Status | Phase | Started | Completed | Test Coverage | Notes |
-|---|---------|-------|--------|-------|---------|-----------|---------------|-------|
-| 1 | `firm-primitives` | 0 | ❌ not extracted | 1 (Fix 8) | ☐ | ☐ | — | create package, move from firm‑types; add `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId` |
-| 2 | `firm-types` | 2 | ⚠️ to split | 1 (Fix 8) | ☐ | ☐ | low (compile‑time) | domain entities + Ports only after split; shared kernel ADR required |
-| 3 | `firm-utils` | 1 | ✅ ready | 1 | ☐ | ☐ | good | add `retry`, `sleep`, `paginate`; fix `hashIp` docs |
-| 4 | `firm-errors` | 1 | ✅ ready | 1 | ☐ | ☐ | good | add `isRetryable`, `toTRPCError`, `toHTTPResponse` |
-| 5 | `firm-crypto` | 1 | ✅ ready | 1 | ☐ | ☐ | good | remove `generateUUID`; add `generateSecureToken`, `encryptField`/`decryptField`, `deriveKey` |
-| 6 | `firm-logger` | 1 | ❌ critical bug | 1 (Fix 9) | ☐ | ☐ | good (except split‑brain) | remove internal context store; add `child`, sampling, `createTestLogger` |
-| 7 | `firm-request-context` | 1 | ⚠️ untested + design flaw | 1 (Fix 6) | ☐ | ☐ | **0%** — critical | replace `[key: string]: any` with module augmentation; add tests; add `withRequestContext` wrapper |
-| 8 | `firm-env` | 1 | ✅ ready | 1 | ☐ | ☐ | excellent | add secret format validation; add `environment` export |
-| 9 | `firm-validators` | 2 | ❌ broken | 1 (Fix 4) | ☐ | ☐ | minimal | add campaign imports, fix migrations, add factory fns, add tests |
-| 10 | `firm-api-contracts` | 2 | ✅ ready | 1 | ☐ | ☐ | good | add `deprecateEvent`, `createWebhookPayloadSchema`, domain routers; oRPC ADR pending |
-| 11 | `firm-db` | 2 | ⚠️ **to be split** | 1 (Fix 5 + Fix 14) | ☐ | ☐ | good | split into `firm-db-schema` + `firm-db-client` before any L6 build; update RLS API |
-| 12 | `firm-cache` | 2 | ⚠️ needs TTL fix | 1 (Fix 1) | ☐ | ☐ | low (only JSON test) | add `acquireLock`, `warmCache` |
-| 13 | `firm-security` | 3 | ❌ broken | 1 (Fix 2a) | ☐ | ☐ | partial | remove rate limiter (extracted to `firm-rate-limiter`); add `validateCorsOrigin`, `Permissions-Policy` |
-| 14 | `firm-auth` | 3 | ⚠️ blocked | 1 (Fix 3) | ☐ | ☐ | good | fix role typing; remove deprecated impersonation; add sub‑account API key scoping |
-| 15 | `firm-consent` | 3 | ✅ ready | 1 | ☐ | ☐ | good | add Google Consent Mode v3 (Jun 15), TCF 2.2, CNIL pixel suppression (Jul 14); fix `gpcApplied` in signed payload |
-| 16 | `firm-observability` | 4 | ⚠️ deprecated | 1 (Fix 7) | ☐ | ☐ | minimal | add `withTenantSpan`, `captureError`, `createTenantMeter`, `resetForTesting` |
-| 17 | `firm-health` | 4 | ⚠️ needs OTEL check | 1 (Fix 10) | ☐ | ☐ | good | add OTel health check; event‑driven registration; `setTimeout` recovery |
-| 18 | `firm-config-eslint` | 0 | ✅ ready | 1 | ☐ | ☐ | N/A | add `workers` boundary type, `no-direct-fetch`, no‑direct‑write‑to‑read‑model rules |
-| 19 | `firm-config-next` | 0 | ✅ ready | complete | ✅ | ✅ | good | add `serverExternalPackages` for Next.js 15 |
-| 20 | `firm-config-tailwind` | 0 | ✅ ready | complete | ✅ | ✅ | N/A | add `v4/` export |
-| 21 | `firm-config-typescript` | 0 | ✅ ready | complete | ✅ | ✅ | N/A | verify `worker` variant covers background workers |
-| 22 | `firm-testing` | testing | ✅ ready (expanding) | 1 (Fix 15) | ☐ | ☐ | N/A | *(renamed from `firm-test-utils`)*; add PGLite, ioredis‑mock, harnesses, `createTenantIsolationFixture`, `mockAdapter`, `createOutboxHarness` |
-| 23 | `firm-tokens` | 0/5 | ✅ ready | complete | ✅ | ✅ | snapshot | add `no-runtime-tokens-import` ESLint rule |
-
----
-
-### 8.2 Phase 1 Structural Deliverables (New Packages Created During Hardening)
-
-These packages do not exist today but are created during Phase 1 via extraction, split, or new development. They are tracked separately because they represent new artifacts in the repository.
-
-| # | Package | Layer | Status | Started | Completed | Test Coverage | Key deliverable |
-|---|---------|-------|--------|---------|-----------|---------------|-----------------|
-| 24 | `firm-rate-limiter` | 3 | ❌ not built | ☐ | ☐ | — | extracted from `firm-security`; sliding window, token bucket, dry‑run, fail‑open |
-| 25 | `firm-db-schema` | 2 | ❌ not built | ☐ | ☐ | — | split from `firm-db`; Drizzle schemas, RLS policies, migrations |
-| 26 | `firm-db-client` | 2 | ❌ not built | ☐ | ☐ | — | split from `firm-db`; connection factories, outbox helpers, pagination, PgBouncer RESET |
-| 27 | `adapters-storage-local` | 7 | ❌ not built | ☐ | ☐ | — | filesystem storage adapter; unblocks all local media development |
-| 28 | `firm-config-k6` | 0 | ❌ not built | ☐ | ☐ | — | shared k6 configuration (base URLs, auth fixtures, ramp‑up profiles) |
-
----
-
-### 8.3 Infrastructure Foundation Packages (Phase 2 – 17 packages, all ❌ not built)
-
-| # | Package | Layer/Tier | Order | Started | Completed | Test Coverage | Key deliverable |
-|---|---------|------------|-------|---------|-----------|---------------|-----------------|
-| 29 | `firm-bus` | 6‑A | 1 | ☐ | ☐ | — | outbox processor, cron, sagas; **ADR pending** |
-| 30 | `firm-flags` | 6‑A | 2 | ☐ | ☐ | — | flag evaluation, expiration, circuit breaker |
-| 31 | `firm-metering` | 6‑A | 3 | ☐ | ☐ | — | usage counters, `checkQuota()` enforcement |
-| 32 | `firm-audit` | 6‑A | 4 | ☐ | ☐ | — | immutable audit, crypto chaining, query/export |
-| 33 | `firm-i18n` | 6‑A | 5 | ☐ | ☐ | — | locale detection, timezone, RTL, ICU pluralisation |
-| 34 | `firm-template-engine` | 6‑A | 6 | ☐ | ☐ | — | templates, versioning, rendering; **ADR pending** |
-| 35 | `firm-media` | 6‑A | 7 | ☐ | ☐ | — | storage, image pipeline, deduplication, CDN purge |
-| 36 | `firm-tenant-config` | 6‑A | 8 | ☐ | ☐ | — | per‑tenant config, plan‑default merging, versioning |
-| 37 | `firm-payments` | 6‑C | 9 | ☐ | ☐ | — | Stripe checkout, webhooks, payment methods |
-| 38 | `firm-notifications` | 6‑A | 10 | ☐ | ☐ | — | multi‑channel, digest batching, in‑app unread count |
-| 39 | `firm-webhooks` | 6‑A | 11 | ☐ | ☐ | — | outbound delivery, retry, signing, test ping, mTLS |
-| 40 | `firm-search` | 6‑A | 12 | ☐ | ☐ | — | full‑text search, faceting, tenant isolation; **ADR pending** |
-| 41 | `firm-sdk` | 2 | 13 | ☐ | ☐ | — | TypeScript client, pagination, `withTenant`, node/browser exports |
-| 42 | `firm-migrations` | 6‑A | 14 | ☐ | ☐ | — | migration runner, drift check |
-| 43 | `firm-seed` | 6‑A | 15 | ☐ | ☐ | — | deterministic seed data |
-| 44 | `firm-sse` | 6‑A | 16 | ☐ | ☐ | — | Server‑Sent Events delivery channel |
-| 45 | `firm-kpi` | 6‑A | 17 | ☐ | ☐ | — | business KPIs, anomaly alerts *(renamed from `firm-telemetry`)* |
-
----
-
-### 8.4 Business Domain Packages (Phases 4‑7 – 22 packages, all ❌ not built)
-
-#### Phase 4: Operations (8 packages)
-
-| # | Package | Tier | Started | Completed | Key deliverable |
-|---|---------|------|---------|-----------|-----------------|
-| 46 | `firm-provisioning` | B | ☐ | ☐ | tenant lifecycle saga, dry‑run |
-| 47 | `firm-compliance` | B | ☐ | ☐ | GDPR erasure (2‑phase), export, Art 30 reports |
-| 48 | `firm-projects` | B | ☐ | ☐ | project/task mgmt, kanban, time tracking |
-| 49 | `firm-sales-pipeline` | B | ☐ | ☐ | deal pipeline, forecasting *(renamed from `firm-pipeline`)* |
-| 50 | `firm-documents` | B | ☐ | ☐ | PDF generation, e‑signature, collaborative review |
-| 51 | `firm-appointments` | B | ☐ | ☐ | booking pages, buffer time, group appointments |
-| 52 | `firm-workflow` | B | ☐ | ☐ | internal process automation; **ADR required** |
-| 53 | `firm-integrations` | B | ☐ | ☐ | unified integration dashboard, health scoring |
-
-#### Phase 5: Revenue (2 packages)
-
-| # | Package | Tier | Started | Completed | Key deliverable |
-|---|---------|------|---------|-----------|-----------------|
-| 54 | `firm-subscriptions` | C | ☐ | ☐ | plan lifecycle, grace periods, grandfathering |
-| 55 | `firm-billing` | C | ☐ | ☐ | invoicing, revenue recognition, multi‑currency |
-
-#### Phase 6: Client‑Facing & Marketing (11 packages)
-
-| # | Package | Tier | Started | Completed | Key deliverable |
-|---|---------|------|---------|-----------|-----------------|
-| 56 | `firm-reporting` | D | ☐ | ☐ | branded PDF reports, CQRS read model |
-| 57 | `firm-cms` | D | ☐ | ☐ | content delivery, staging, multilingual fallback |
-| 58 | `firm-forms` | D | ☐ | ☐ | form builder, partial save, CRM field validation |
-| 59 | `firm-landing-pages` | D | ☐ | ☐ | landing page renderer, A/B tests, Core Web Vitals |
-| 60 | `firm-funnels` | D | ☐ | ☐ | multi‑step funnel engine, cross‑channel, analytics |
-| 61 | `firm-social` | D | ☐ | ☐ | cross‑platform scheduling, social listening |
-| 62 | `firm-seo` | D | ☐ | ☐ | rank tracking, technical audits, schema markup |
-| 63 | `firm-reputation` | D | ☐ | ☐ | review monitoring, competitor tracking, SLA alerts |
-| 64 | `firm-ads` | D | ☐ | ☐ | ad performance aggregation, UTM management |
-| 65 | `firm-ai` | D | ☐ | ☐ | AI infra: model routing, cost metering, lead scoring |
-| 66 | `firm-ai-content` | D | ☐ | ☐ | AI generation: human‑approval gate, C2PA, NY disclosure |
-| 67 | `firm-inbox` | D | ☐ | ☐ | unified conversation inbox, assignment, SLA tracking |
-
-#### Phase 7: Portal (1 package)
-
-| # | Package | Tier | Started | Completed | Key deliverable |
-|---|---------|------|---------|-----------|-----------------|
-| 68 | `firm-portal` | D | ☐ | ☐ | white‑label client portal API |
-
----
-
-### 8.5 Adapter Packages (Phase 3 – 105 adapters, all ❌ not built)
-
-**High priority (22):** HubSpot, Salesforce, GoHighLevel, Pipedrive, Zoho, ActiveCampaign, Keap (CRM); Resend, SendGrid, SES, Postmark, SMTP, Mailgun (Email); Stripe, Paddle, PayPal, Square (Payments); OpenAI, Anthropic, Google AI, Azure OpenAI (AI Models); S3, R2, **Local** (Storage – Local already tracked in §8.2)
-
-**Medium priority:** Twilio, Vonage, MessageBird (SMS); Cal.com, Google Calendar, Outlook, Acuity (Booking); Plausible, GA4, Fathom, Mixpanel, PostHog (Analytics); Meta, Twitter, LinkedIn, TikTok (Social); Google Search Console, SEMrush, Ahrefs, Moz (SEO); Google Ads, Meta Ads, LinkedIn Ads, TikTok Ads (Paid Ads); Google Business Profile, Trustpilot, Yelp (Reviews); DocuSign, PandaDoc, Qwilr, Dropbox Sign (Proposals); Sanity, Strapi, Directus, Contentful (CMS); Puppeteer, PDFShift (PDF Generation); OpenAI DALL‑E 3, Stability AI (AI Image); Zoom, Google Meet, Microsoft Teams (Video Conferencing); ZeroBounce, NeverBounce, Kickbox (Email Validation)
-
-**Low priority:** QuickBooks, Xero, FreshBooks (Accounting); Hotjar, CrazyEgg, Optimizely, VWO (CRO); Asana, Trello, Monday, ClickUp (Project Mgmt); Figma, Canva, Adobe CC (Design); Mux, YouTube, Vimeo, Wistia (Video); Intercom, Drift, Tidio, WhatsApp (Chat); Okta, Azure AD (SCIM – split per‑provider)
-
-*Complete registry with per‑package tracking to be generated and maintained in `packages/layer7-adapters/REGISTRY.md`.*
-
----
-
-### 8.6 Application Packages (Phase 8 – 22 apps, all ❌ not built)
-
-| # | Application | Started | Completed | Purpose |
-|---|-------------|---------|-----------|---------|
-| 69 | `apps/platform/platform-portal` | ☐ | ☐ | internal agency hub |
-| 70 | `apps/platform/platform-analytics` | ☐ | ☐ | agency analytics dashboards |
-| 71 | `apps/platform/platform-crm` | ☐ | ☐ | lead and deal management |
-| 72 | `apps/platform/platform-booking` | ☐ | ☐ | appointment scheduling |
-| 73 | `apps/platform/platform-forms` | ☐ | ☐ | form builder |
-| 74 | `apps/platform/platform-funnels` | ☐ | ☐ | funnel builder |
-| 75 | `apps/platform/platform-landing-pages` | ☐ | ☐ | landing page editor |
-| 76 | `apps/platform/platform-email` | ☐ | ☐ | email campaign management |
-| 77 | `apps/platform/platform-seo` | ☐ | ☐ | SEO tools |
-| 78 | `apps/platform/platform-reputation` | ☐ | ☐ | review monitoring |
-| 79 | `apps/platform/platform-ads` | ☐ | ☐ | ad management |
-| 80 | `apps/platform/platform-social` | ☐ | ☐ | social scheduling |
-| 81 | `apps/platform/platform-content` | ☐ | ☐ | content/asset management |
-| 82 | `apps/platform/platform-reporting` | ☐ | ☐ | reports and dashboards |
-| 83 | `apps/platform/platform-proposals` | ☐ | ☐ | proposal builder |
-| 84 | `apps/platform/platform-invoicing` | ☐ | ☐ | invoicing |
-| 85 | `apps/platform/platform-projects` | ☐ | ☐ | project management |
-| 86 | `apps/platform/platform-documents` | ☐ | ☐ | document management |
-| 87 | `apps/platform/platform-chat` | ☐ | ☐ | unified inbox |
-| 88 | `apps/platform/platform-storybook` | ☐ | ☐ | component library (Storybook) |
-| 89 | `apps/platform/platform-admin` | ☐ | ☐ | platform administration |
-| 90 | `apps/marketing-site` | ☐ | ☐ | agency public website |
-
-**Client sites (`apps/clients/`):** Generated per client, not hand‑authored. **ADR pending** (ephemeral generation recommended). Not included in the count above as they are not committed code.
-
----
-
-### 8.7 Phase Completion Summary (Revised)
-
-| Phase | Target packages/actions | Current status | Started | Completed | Completion |
-|-------|------------------------|----------------|---------|-----------|------------|
-| 1 (Foundation Hardening) | 23 existing + 18 fixes/structural actions | ☐ not started | ☐ | ☐ | 0% |
-| 2 (Infrastructure) | 17 new | ☐ not started | ☐ | ☐ | 0% |
-| 3 (Adapters) | 105 new | ☐ not started | ☐ | ☐ | 0% |
-| 4 (Operations) | 8 new | ☐ not started | ☐ | ☐ | 0% |
-| 5 (Revenue) | 2 new | ☐ not started | ☐ | ☐ | 0% |
-| 6 (Client‑Facing) | 11 new | ☐ not started | ☐ | ☐ | 0% |
-| 7 (Portal) | 1 new | ☐ not started | ☐ | ☐ | 0% |
-| 8 (Applications) | 22 apps | ☐ not started | ☐ | ☐ | 0% |
-
----
-
-### 8.8 Overall Platform Metrics
-
-| Metric | Value |
-|--------|-------|
-| Total planned packages (L0‑L7) | **187** |
-| Total adapter packages | **105** |
-| Total applications | **22** |
-| Total background workers | **13** |
-| **Total artifacts (packages + workers + apps)** | **~231** |
-| Packages built today | **23** |
-| Packages built after Phase 1 | **~28** (23 + new extracted/created) |
-| Current package completion | **23 / 187 = 12.3%** |
-| Current total artifact completion | **23 / 231 = 10.0%** |
-
-**Note:** Completion percentages will be updated in real time as Phase 1 fixes are verified and new packages are committed with passing tests. Section 8 is the living project dashboard — it must be updated at the close of each phase.
-
----
-
----
-
-*Document End*
+### N.6 Document Cross-Reference Map
+
+The following table maps every major architectural concern to its definitive location across the three documents. Use this to find the authoritative source before writing new content.
+
+| Concern | Blueprint | Critique | Assessment |
+|---------|-----------|----------|-----------|
+| Layer definitions and rules | §2 | — | — |
+| Package interfaces and API contracts | §2 per layer | — | §A (status only) |
+| CI gate specifications | §4 | — | §I (active/inactive) |
+| Data flow diagrams | §5 | — | — |
+| Glossary of architectural terms | §6.1 | — | §J (assessment-specific only) |
+| Recurring patterns | §6.2 | — | — |
+| AI agent onboarding | §7 | — | — |
+| Correct decisions to preserve | — | Part 1 | §N.1 (pending Critique update) |
+| Resolved decisions + contradictions | — | Part 2 | §N.4 (pending Critique update) |
+| Security and data integrity findings | — | Part 3 | §N.2 (pending Critique update) |
+| Phase 1 fix sequence | — | Part 3.2 | §B (reproduced for self-containment) |
+| Compliance deadline calendar | — | Part 3.3 | §C (reproduced for self-containment) |
+| Build and TypeScript architecture | — | Part 4 | — |
+| Dependency governance | — | Part 5 | — |
+| Repository structure (authoritative) | — | Part 6 | §H (checklist only) |
+| Database migration architecture | — | Part 7 | — |
+| Governance and developer experience | — | Part 8 | §N.5 (pending Critique update) |
+| CI/CD pipeline | — | Part 9 | §I |
+| Observability and monitoring | — | Part 10 | — |
+| ADR backlog (detail) | — | Part 11 | §F (summary table) + §N.3 (new ADRs) |
+| Package health inventory | — | — | §A |
+| Phased implementation roadmap | — | — | §D |
+| Worker inventory and contracts | — | — | §E |
+| L6 gap register | — | — | §K |
+| Master package count and quick reference | — | — | §L |
+| Critique supplement (pending items) | — | — | §N |
+
+*End of document.*

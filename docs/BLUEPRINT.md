@@ -1,733 +1,688 @@
-Here is the updated **Section 1: Executive Vision** for the Architecture Constitution, incorporating the precise adapter count and the explicit branded IDs for the three‑tier hierarchy.
+# Marketing Agency Platform — Architecture Constitution & Enforcement Manual
+
+**Type:** Immutable architectural constitution — layer taxonomy, package contracts, guarantees, enforcement, vocabulary.
+**Companion:** `ASSESSMENT.md` — current package health, known bugs, build order, progress tracking.
+**Rule:** This document changes only when architectural foundations are deliberately, formally updated. All features, adapters, and applications must comply.
 
 ---
 
-# Marketing Agency Platform  
-## Architecture Constitution & Enforcement Manual
+## §1 Platform
 
-**Document purpose:** This is the single, enduring source of architectural truth for the marketing agency platform. It defines the system’s structure, its immutable rules, its enforcement mechanisms, and the shared vocabulary everyone — founders, developers, AI agents — must operate by. It changes only when the platform’s architectural foundations are deliberately, formally updated.
+### 1.1 Capabilities
 
-**Companion document:** For the current state of the codebase (package health, known bugs, test gaps, missing inventory) and for the phased implementation plan (critical fixes, build order, construction phases), see the **Current State Assessment & Phased Implementation Roadmap**. That document is a living snapshot; this document is the constitution.
-
----
-
-## Section 1: Executive Vision
-
-### 1.1 What This Platform Is
 Single unified codebase powering:
-- Agency’s public website
-- Per‑client dedicated websites (brand + content)
+- Agency public website
+- Per-client dedicated websites (brand + content)
 - Landing pages for ad campaigns
 - Native business apps: CRM, project management, booking, invoicing, reporting, client portals
-- Adapters to **105+ third‑party services** (email, social, ads, payments, CRMs, analytics, AI, and more)
+- Adapters to **105+ third-party services**: email, SMS, social, ads, payments, CRMs, analytics, AI, storage, telephony, and more
 
-**Multi‑tenancy (two levels):**
-1. **Agency tenants** – each agency gets fully isolated environment.
-2. **Sub‑accounts (agency clients)** – agencies manage end‑clients as sub‑accounts, inheriting branding/billing but isolated from each other.
+### 1.2 Tenancy & Hierarchy
 
-**Three‑tier hierarchy:** Platform → Agency → Sub‑Account (white‑label reseller model).  
-All data/config/digital assets securely isolated. Branded types (`TenantId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`, `UserId`) enforce this hierarchy at compile time, preventing ID mix‑ups across the three levels.
+**Three-tier hierarchy:** Platform → Agency → Sub-Account (white-label reseller model).
 
-**AI‑agent‑friendly:** every rule explicit, enabling safe feature addition.
+- **Agency tenants** — fully isolated environment per agency.
+- **Sub-accounts** — agency end-clients; inherit branding/billing from parent agency; strictly isolated from sibling sub-accounts.
+- **Platform** — operator tier; any cross-tenant action is audited and scoped to a single tenant.
 
-### 1.2 Who This Blueprint Is For
-- Founder/business owner – capabilities, guarantees, system structure.
-- AI coding agents – unambiguous map of structural rules & contracts.
-- Future human developers – rapid onboarding without reverse‑engineering.
+All data, config, and digital assets are isolated by tier. Branded types enforce the hierarchy at compile time — ID mix-ups across tiers are a build error, not a runtime risk.
 
-### 1.3 What the Rest Contains
-Defines the **immutable rules**:
-- Seven‑layer taxonomy with strict dependency rules.
-- Immutable stress‑test commitments (tenant isolation, usage control, event reliability, schema governance).
-- Cross‑cutting enforcement mechanisms (CI, DB, language contracts).
-- Canonical data‑flow patterns (requests, auth, events, consent, observability).
-- Shared vocabulary & pattern library.
+| Branded Type | Tier | Gatekeeper |
+|---|---|---|
+| `PlatformId` | Platform | `asPlatformId()` |
+| `TenantId` | Agency or Sub-Account (generic) | `asTenantId()` |
+| `AgencyId` | Agency | `asAgencyId()` |
+| `SubAccountId` | Sub-Account | `asSubAccountId()` |
+| `UserId` | Any tier | `asUserId()` |
+| `SessionId` | Any tier | `asSessionId()` |
 
-All features/adapters/applications must obey these rules.
+Domain-level IDs (`LeadId`, `CampaignId`, `BookingId`, `InvoiceId`, `ProjectId`, `ContactId`, `DealId`, `FormId`, `PageId`, `ContentId`, `DocumentId`) are defined in `firm-types`, not `firm-primitives`. Raw `as TenantId` casts are banned by ESLint — gatekeepers only.
 
 ---
 
-## Section 2: Layered Taxonomy
+## §2 Layers
 
-**Seven strict layers:** Each layer may only depend on layers below. No upward imports, no circular dependencies.
+**Rule:** Each layer may only import from the same or lower layer. No upward imports. No circular dependencies. Enforced by `firm-config-eslint` (`boundaries` plugin + `dep-fence` script) on every CI run.
 
----
+### 2.0 Layer Overview
 
-### 2.1 Layer Overview
-
-| Layer | Core Objective |
-|-------|----------------|
-| **0** | Build & constraint: shared config factories, design‑token pipeline, zero‑runtime primitives |
-| **1** | Core utilities & environment: errors, crypto, logging, request context, env validation |
-| **2** | Data & contracts: domain types, validation schemas, API/event contracts, DB schemas, cache isolation |
-| **3** | Identity, security & consent: auth, RBAC, MFA, rate limiting, GDPR/CCPA consent |
-| **4** | Observability & health: logs, traces, metrics, health probes |
-| **5** | UI, theming & configuration: design tokens (consumed), component library, theme injection |
-| **6** | Feature packages & workers: business capabilities + all background processing |
-| **7** | Adapters: pluggable wrappers for 105+ third‑party services (sole external bridge) |
+| L | Name | Objective | Pkg count |
+|---|------|-----------|-----------|
+| 0 | Build & Constraint | Config factories, design-token pipeline, zero-runtime primitives | 13 |
+| 1 | Core Utilities | Errors, crypto, logging, context, env, date, IDs, sanitization | 12 |
+| 2 | Data & Contracts | Domain types, validation, API/event contracts, DB schemas, cache, SDK | 16 |
+| 3 | Identity, Security & Consent | Auth, RBAC, rate limiting, GDPR/CCPA consent, policy | 5 |
+| 4 | Observability & Health | Logs, traces, metrics, health probes | 2 |
+| 5 | UI, Theming & Testing | Design tokens (consumed), component library, theme injection, test harnesses | 4 |
+| 6 | Features & Workers | Business capabilities + all background processing | 38 |
+| 7 | Adapters | Pluggable wrappers for 105+ third-party services — sole external bridge | 105+ |
 
 ---
 
-### 2.2 Layer 0 — Build & Constraint
+### 2.1 L0 — Build & Constraint
 
-**Purpose:** No runtime features. Enforces correctness, consistency, security at build time.
+**Rules:** No runtime code except `firm-primitives` gatekeepers. No imports from internal packages except `firm-primitives`. `exports` field = only public API; internal path imports fail CI. Config changes propagate via factory patterns — never manually updated per-app.
 
-**Packages (compact):**
-- `firm‑primitives`: branded IDs (`TenantId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`, `UserId`, etc.), gatekeeper functions (`asTenantId`, `asAgencyId`, …), pure helper types. Domain‑level IDs (`LeadId`, `CampaignId`, etc.) are **excluded** — they belong in `firm‑types`. Zero domain knowledge.
-- `firm‑config‑eslint`: shared ESLint flat config (import boundaries, branded‑ID validation, `workers` boundary type, `no‑direct‑fetch` rule forcing all external calls through adapters, rule banning direct writes to the CQRS read model).
-- `firm‑config‑typescript`: strict TS config (no `any`, exhaustive switch, gatekeeper enforcement).
-- `firm‑config‑prettier`: frozen formatting rules.
-- `firm‑tokens`: W3C DTCG design tokens → generated CSS/TS constants. Build‑time only; a `no‑runtime‑tokens‑import` ESLint rule prevents direct runtime imports.
-- `firm‑config‑next`: factory for security‑hardened Next.js configs (CSP, cache, Turbopack). Explicitly sets `serverExternalPackages: ['pino', 'drizzle‑orm', 'postgres']` to prevent Node‑native bundling errors.
-- `firm‑config‑tailwind`: shared Tailwind safelist & content paths.
-- `firm‑config‑vitest`: shared Vitest config factory (coverage ≥80%, Node/browser modes).
-- `firm‑config‑playwright`: shared E2E config (browsers, base URLs, auth state).
-- `firm‑config‑commitlint`: conventional commits enforcement.
-- `firm‑config‑docker`: shared Dockerfile templates & base images (hardened Node.js). Template enforces: multi‑stage builds, non‑root user, `tini` as PID 1, standard `HEALTHCHECK CMD`.
-- `firm‑config‑storybook`: shared Storybook config + theme injection.
-- `firm‑config‑security‑headers`: factory for CSP/HSTS/Permissions‑Policy (decoupled from Next.js). Permissions‑Policy defaults: `camera=(), microphone=(), geolocation=(self), payment=(self)`.
-
-**Immutable constraints:**
-- No runtime code (except `firm‑primitives` gatekeepers). No runtime dependencies.
-- All configuration changes propagate automatically through factory patterns — no developer should ever manually update a security header across multiple apps.
-- Build‑target and module‑resolution choices avoid any settings marked as deprecated, eliminating forced future migrations.
-- No imports from other internal packages (except primitives).
-- `exports` field = only public API; internal path imports fail CI.
+| Package | Provides |
+|---------|----------|
+| `firm-primitives` | Branded IDs (`TenantId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`, `UserId`) + gatekeeper functions (`asTenantId`, `asAgencyId`, …). Domain-level IDs excluded — they live in `firm-types`. |
+| `firm-config-eslint` | ESLint flat config: layer boundary enforcement (`boundaries`), branded-ID validation, `workers` boundary type, `no-direct-fetch` rule, `no-direct-read-model-write` rule. |
+| `firm-config-typescript` | Strict TS base config: `strict`, no `any`, exhaustive switch, gatekeeper enforcement. Composite builds + declaration maps. |
+| `firm-config-prettier` | Frozen formatting rules. |
+| `firm-tokens` | W3C DTCG design tokens → CSS custom properties + TS constants. Build-time pipeline; `no-runtime-tokens-import` ESLint rule prevents direct runtime imports. |
+| `firm-config-next` | Security-hardened Next.js 15 (App Router) config factory. Sets `serverExternalPackages: ['pino', 'drizzle-orm', 'postgres']` to prevent Node-native bundling errors. |
+| `firm-config-tailwind` | Shared Tailwind safelist & content paths. |
+| `firm-config-vitest` | Shared Vitest config factory. Coverage threshold: ≥80% line/function, ≥75% branch. Node and browser modes. |
+| `firm-config-playwright` | Shared E2E config: browsers, base URLs, auth state. |
+| `firm-config-commitlint` | Conventional commits enforcement. |
+| `firm-config-docker` | Dockerfile template. Enforces: multi-stage builds; non-root user (UID ≥ 10000); `tini` as PID 1; `HEALTHCHECK CMD` calling `/health`. |
+| `firm-config-storybook` | Shared Storybook config + theme injection. |
+| `firm-config-security-headers` | CSP/HSTS/Permissions-Policy factory, decoupled from Next.js. Defaults: `camera=(), microphone=(), geolocation=(self), payment=(self)`. |
 
 ---
 
-### 2.3 Layer 1 — Core Utilities & Environment
+### 2.2 L1 — Core Utilities & Environment
 
-**Packages:**
-- `firm‑env`: validates all env vars at startup; refuses start on missing/malformed secrets.
-- `firm‑utils`: pure functions, `Result<T,E>` type, string helpers, deep‑merge, exhaustive checks.
-- `firm‑errors`: typed error hierarchy (RFC 7807 Problem Details) with machine‑readable codes.
-- `firm‑crypto`: Web Crypto wrappers (HMAC, nonce/TOTP, constant‑time compare).
-- `firm‑logger`: structured JSON logging (Pino) with PII redaction. Uses `firm‑request‑context` exclusively for context → single source of truth.
-- `firm‑request‑context`: `AsyncLocalStorage` carrying `RequestContext` (correlationId, traceId, tenantId, userId, session flags) through async ops.
+**Rules:** Zero business logic. Zero upward imports (L2–L7). Zero side effects at import time except `firm-env` startup assertion. `console.log` banned — `firm-logger` only. Context propagation exclusively via `firm-request-context`'s `AsyncLocalStorage`. Expected failures → `Result.Err`; exceptions only for programmer errors. `tsgo` for `--noEmit` CI type-checks; `tsc` for declaration emit until TS7 GA (H2 2026).
 
-**Key patterns:**
-- Expected failures → `Result.Err`. Exceptions only for programmer errors.
-- Every call to a third‑party library or external service is wrapped in `tryCatchAsync` at the adapter boundary, converting thrown exceptions into typed errors.
-- All secrets via `firm‑env`. HMAC uses constant‑time.
-- `console.log` banned; only `firm‑logger`.
-- Context propagation solely via `firm‑request‑context`.
-
----
-
-### 2.4 Layer 2 — Data & Contracts
-
-**Purpose:** Defines the shared shape of every domain concept (lead, booking, campaign, invoice, etc.) – no business logic, only validation and schema generation.
-
-**Packages:**
-
-| Package | Research Domain | Responsibility (condensed) |
-|---------|-----------------|---------------------------|
-| `firm‑types` | Domain‑Driven Design | TS interfaces for all domain entities (Leads, CRM, Marketing, Content, Operations, Commercial, Automation, Reputation/SEO, Compliance, Messaging, Platform — full inventory defined in shared‑kernel ADR), Ports (`CRMPort`, etc.), API envelopes. Uses branded IDs from `firm‑primitives`. No runtime code. |
-| `firm‑validators` | Validation | Single source of validation. Zod schemas `satisfies` the corresponding TS interface; ID fields use gatekeepers. |
-| `firm‑api‑contracts` | API & Event Contracts | Typed tRPC/OpenAPI schemas, CloudEvents envelopes, global **Event Registry** with mandatory `version`. Handlers declare `acceptsVersions`; CI enforces coverage. |
-| `firm‑db‑schema` | Infrastructure (Schema) | Drizzle schemas, RLS policy generators (parent‑child hierarchy), migration source of truth. Lightweight — no runtime connection dependencies. |
-| `firm‑db‑client` | Infrastructure (Runtime) | Connection factories (`serverless/pooled/direct`), query helpers (cursor pagination, soft‑delete, transactional outbox), PgBouncer‑safe RESET wrapper. Depends on `firm‑db‑schema`. |
-| `firm‑db‑read` | Infrastructure (CQRS Read) | Denormalised read‑optimised schema for `firm‑reporting`. Separate connection pool. Populated only by outbox event handlers. Home decided via ADR 7; initially a subdirectory of `firm‑db‑schema`. |
-| `firm‑cache` | Caching | Tenant‑scoped Redis client, tag‑based invalidation, cache key factory auto‑prefixes with `tenantId`. |
-| `firm‑sdk` | Public API Client | Typed TypeScript client for the platform API. Moved to Layer 2 (no business logic). Sub‑exports: `@firm/sdk/node`, `@firm/sdk/browser`. Includes `verifyWebhookSignature()` helper. |
-
-**Key architectural patterns (all enforced):**
-
-- **Branded IDs** (`TenantId`, `AgencyId`, …) from `firm‑primitives` prevent ID mix‑ups at compile time. Runtime gatekeeper validates UUID. ESLint bans raw `as TenantId`.
-- **Event Registry + versioning:** Every event registered with a version. Handlers declare `acceptsVersions`. CI checks: every emitted version has a handler. Breaking changes require new version.
-- **Tenant scoping via RLS:** All tenant‑scoped queries inside `setTenantContext()` – PostgreSQL RLS enforces isolation. Supports parent‑agency visibility via separate policy.
-- **Explicit connection mode:** `serverless`, `pooled`, or `direct` – never guessed.
-- **Cache key discipline:** All cache keys via `CacheKeyFactory(tenantId)`. Raw string concatenation is lint error.
-- **RLS policy + test in same PR:** Every new tenant‑scoped table includes RLS policy and an isolation test.
-- **CQRS read model isolation:** Only outbox event handlers (via `firm‑bus`) may write to the reporting read schema. Direct writes from feature packages are blocked by an ESLint rule.
-
-> **Note:** The `firm‑db` split into `firm‑db‑schema`, `firm‑db‑client`, and `firm‑db‑read` is the target architecture and will be fully enacted before Phase 2 begins. A formal ADR for the split and CQRS home is in the ADR backlog.
+| Package | Provides |
+|---------|----------|
+| `firm-env` | Validates all env vars at startup via Zod; refuses start on missing/malformed secrets. Exports typed `environment: 'development'\|'staging'\|'production'`. `getSecret(key)` lazy accessor (prevents cold-start timing attacks). Secret format validation: `.url()`, `.min(32)`, custom DB URL validator. |
+| `firm-utils` | `Result<T,E>`, `tryCatchAsync`, deep-merge, string helpers, exhaustive checks. `retry<T>(fn, options)` — full-jitter exponential backoff with `maxAttempts`, `initialDelayMs`, `maxDelayMs`, `backoffFactor`, `isRetryable` hook, `onRetry` callback. `sleep(ms)` — typed cancellable. `paginate(cursor, limit, direction)` — pure cursor math. Named sub-exports: `@firm/utils/result`, `/retry`, `/pagination`. |
+| `firm-errors` | Typed RFC 7807 error hierarchy with machine-readable codes. `isRetryable(error): boolean` — distinguishes network timeout/503/429 from validation/duplicate/404. `toTRPCError(error)`, `toHTTPResponse(error, status?)` — standardised serialisers. `FirmError.withContext(additions)` — builder for adapter-specific context. |
+| `firm-crypto` | HMAC (constant-time), TOTP, `generateSecureToken(bytes)` — uniform-length crypto-secure tokens. `encryptField(value, keyId)` / `decryptField(ciphertext, keyId)` — AES-256-GCM column-level PII encryption (GDPR Art. 32, SOC 2 CC6.1); `keyId` enables rotation. `deriveKey(password, salt, iterations?)` — PBKDF2/Argon2 for per-tenant keys. (`generateUUID` removed — use `firm-id`.) |
+| `firm-logger` | Structured JSON logging (Pino) with PII redaction. Reads context exclusively from `firm-request-context.getUnifiedContext()` — no internal store. `logger.child(bindings)` — module/operation scoping. Configurable sampling with guaranteed error/warn delivery. `createTestLogger()` — in-memory capture for test assertions. Auto `pino-pretty` in dev. |
+| `firm-request-context` | `AsyncLocalStorage` carrying `RequestContext` (`correlationId`, `traceId`, `tenantId`, `userId`, session flags). Closed type via module augmentation (no `[key: string]: any`). `withRequestContext(fn)` — mandatory wrapper for all Inngest/BullMQ job handlers; restores `tenantId`/`traceId` in background workers. `extendContext(additions)` — typed race-safe merge helper. |
+| `firm-date` | `toISOStringUTC(date)`, `parseISO(string)` (throws `FirmError` on invalid), `addDuration(date, duration)`, `isWithinWindow(date, start, end)`, `formatRelative(date, locale)`, `startOfPeriod(date, 'day'\|'week'\|'month')`, `isExpired(date)`. **Must exist before any L2 schema or `firm-bus` is built** — outbox retry scheduling requires shared date arithmetic to prevent DST/clock-skew divergence. |
+| `firm-id` | `generateId()` — UUID v7 (time-ordered, B-tree performance). `generateShortId()` — nanoid-style 21-char URL-safe. `generateApiKeyToken()` — `firm_` prefixed, 32-byte crypto-random. `isValidId(string)`, `toSlug(name)` (lowercase, hyphenated, max 63 chars), `isValidSlug(string)`. **Must exist before any table is created** — UUID version affects every primary key. Distinct from `firm-primitives`: `firm-primitives` defines types; `firm-id` generates new IDs. |
+| `firm-sanitize` | `sanitizeHtml(html, policy)` — named policies: `strict`, `rich-text`, `email`, `cms`. `stripHtml(html)`, `sanitizeUrl(url)` (blocks `javascript:`, `data:`), `sanitizeFilename(name)` (path traversal prevention), `escapeHtml(string)`. **L1 (not L3)** — pure defensive utility with no domain or auth deps. Required by ≥6 packages; centralised here to prevent divergent XSS attack surface. |
+| `firm-invariant` | `invariant(condition, message): asserts condition` — throws `InvariantViolationError`. `assertNonNull<T>(value): asserts value is T`. `assertNever(value)` — exhaustive switch arm. `assertValidated<T>(schema, value): z.infer<T>` — inline Zod validation that throws `FirmError`. |
+| `firm-circuit-breaker` | `createCircuitBreaker<T>(fn, options)` — CLOSED/OPEN/HALF-OPEN state machine. Configurable: `failureThreshold`, `recoveryTimeout`, `successThreshold`. `onStateChange` callback for metrics. `getState()` for health endpoints. Redis-backed per-tenant failure counts. **Must exist before any L7 adapter is built** — prevents thundering herd on provider recovery. |
+| `firm-codec` | `toBase64Url` / `fromBase64Url` (URL-safe, no padding), `toHex` / `fromHex`, `encodeQueryString` / `decodeQueryString` (typed, handles arrays/unicode), `serializeJSON` / `deserializeJSON<T>(string, schema)` (handles `Date`, `BigInt`, circular refs), `toCSV(rows)`. |
 
 ---
 
-### 2.5 Layer 3 — Identity, Security & Consent
+### 2.3 L2 — Data & Contracts
 
-**Packages:**
-- `firm‑security`: CSP generation, security headers, named rate‑limiting policies (policy registry only — the *engine* is now in `firm‑rate‑limiter`), Turnstile verification, tag registry (third‑party scripts gated by consent), C2PA manifest generation (EU AI Act Art. 50).
-- `firm‑rate‑limiter`: Redis‑backed sliding window and token‑bucket rate limiter. Plan‑tier‑aware limits (Starter/Pro), named policy registry as single source of truth, dry‑run mode for tuning, fail‑open when Redis is unreachable. All rate‑limited endpoints reference a named policy — inline values are rejected at CI.
-- `firm‑auth`: session management (frozen immutable), RBAC (single permission matrix supporting explicit three‑tier hierarchy: `platform‑admin`, `agency‑admin`, `sub‑account‑admin`, `sub‑account‑user`), API keys (constant‑time HMAC, sub‑account scoping enforced), TOTP MFA, secure impersonation/delegation with audit logging. Centralised `validateCorsOrigin(origin, tenantId)` backed by `firm‑tenant‑config`.
-- `firm‑consent`: full GDPR/CCPA lifecycle: server‑side cookie parsing (HMAC‑signed), Global Privacy Control (GPC) detection → overrides marketing/analytics consent (with `gpcApplied` flag in signed payload), Google Consent Mode v3 translation layer (deadline Jun 15), TCF 2.2 consent string encoding for EU programmatic ads, React‑level rendering gate (unconsented scripts never injected).
+**Rules:** No business logic — defines shape, not behaviour. No upward imports (L3–L7). Every entity, schema, event, and table definition exists in exactly one place. **drizzle-zod bridge law:** Drizzle table = single structural source of truth; `firm-validators` imports `createInsertSchema`/`createSelectSchema` and adds only `.refine()` business rules — no manually-written structural Zod schemas. All cache keys via `CacheKeyFactory(tenantId)` — raw string concatenation is a lint error. Every new tenant-scoped table requires an RLS policy and an isolation test in the same PR.
 
-**Key patterns:**
-- Dynamic pages: per‑request CSP nonce. `unsafe‑inline`/`unsafe‑eval` never allowed.
-- Rate limiting: all limits reference named policies in `firm‑rate‑limiter`’s registry. Inline limits cause build failure.
-- `SessionContext` deeply frozen after creation.
-- RBAC matrix single file. Every protected route calls `requirePermission()`.
-- Consent is structural gate, not UI preference. GPC forces denial of marketing/analytics.
-- Every privileged action writes immutable audit record with cryptographic checksum.
-- SCIM adapter (Layer 7) implements `/scim/v2/Users` and `/scim/v2/Groups` for enterprise provisioning, orchestrated by `firm‑auth`.
-
----
-
-### 2.6 Layer 4 — Observability & Health
-
-**Packages:**
-- `firm‑observability`: init utilities for logs, traces (OpenTelemetry), metrics (Prometheus), error tracking (Sentry), RUM. Provides `withSpan()` and `withTenantSpan()` that automatically attach tenant/user/correlation context.
-- `firm‑health`: Kubernetes‑style probes: liveness (event loop only), readiness (all dependencies + RLS + observability health check), startup (bootstrap). RLS check verifies every tenant‑scoped table has RLS.
-
-**Three‑pillar requirement (enforced pre‑production & continuously):**  
-Every service must produce structured logs, metrics, and distributed traces. Readiness probe fails if OpenTelemetry SDK not exporting spans → no traffic routed.
-
-**Key patterns:**
-- `AsyncLocalStorage` (Layer 1) propagates context into logs, metrics, spans.
-- PII redaction: structural field‑path + regex patterns. CI test fails if any PII appears unredacted.
-- Log sampling: errors/warnings never dropped; health‑check logs sampled.
-- Distributed tracing: browser → API → worker → adapter via W3C Trace Context.
-- Liveness probes never touch external dependencies. Readiness probes check all critical deps in parallel.
+| Package | Provides |
+|---------|----------|
+| `firm-types` | TS interfaces for all domain entities: Leads, CRM, Marketing, Content, Operations, Commercial, Automation, Reputation/SEO, Compliance, Messaging, Platform (scope defined by ADR-003). Domain-level branded IDs: `LeadId`, `CampaignId`, `BookingId`, `InvoiceId`, `ProjectId`, `ContactId`, `DealId`, `FormId`, `PageId`, `ContentId`, `DocumentId`. API envelopes. No runtime code. Port interfaces extracted to `firm-ports`. |
+| `firm-validators` | Single source of validation. Zod schemas derived from Drizzle tables via `drizzle-zod`; adds only cross-field `.refine()` rules. Schema factories: `createPaginationSchema()`, `createTenantScopedSchema(base)`, `createVersionedSchema(schema, v)`, `createIdempotencySchema()`, `createWebhookPayloadSchema(eventSchema)`, `createAuditableSchema(base)`. `satisfies` CI gate ensures every Zod schema satisfies its TS interface. |
+| `firm-api-contracts` | Typed tRPC routers (per-domain sub-routers from day one), OpenAPI schemas. HTTP contracts only — event contracts extracted to `firm-events`. oRPC ADR pending (single contract → tRPC + OpenAPI + type-safe fetch). |
+| `firm-events` | `defineEvent(name, version, payloadSchema)`, `deprecateEvent(name, version, sunsetDate)` (CI blocks new handler registrations past sunset), `EventRegistry` (read by `firm-bus` at startup), `createEventHandler(name, versions, handler)`, `CloudEventsEnvelope<T>`, `createWebhookPayloadSchema(eventSchema)`, `generateAsyncApiDocument(registry)` → AsyncAPI 3.0 for `contracts/v1/`. **Prerequisite for `firm-bus`.** |
+| `firm-db-schema` | Drizzle table definitions for all entities. RLS policy generators (default + parent-agency policies). Migration source of truth. `drizzle-zod` bridge: exports `createInsertSchema(table)`, `createSelectSchema(table)`. Zero runtime connection dependencies — importable in tests without a DB. |
+| `firm-db-client` | Connection factories: `serverless`, `pooled`, `direct` — explicit, never auto-detected. `withTenantContext(tenantId, fn)` — wraps queries with RLS context setup/teardown + PgBouncer-safe RESET on exit (prevents `SET LOCAL` leaking across pooled connections). `withTransaction(fn)` — never exposes raw `BEGIN/COMMIT/ROLLBACK`. `writeToOutbox(event, payload, options)` — only permitted outbox write path. `paginateCursor(query, cursor, limit)`, `softDelete(table, id)`, `includeSoftDeleted(query)`, `batchQuery<T>(ids, fn)` — prevents N+1. `withOptimisticLock(table, id, version)`. |
+| `firm-db-read` | Denormalised read-optimised schema for `firm-reporting`. Separate connection pool — never shares write pool. Populated exclusively by `firm-bus` outbox event handlers. `no-direct-read-model-write` ESLint rule blocks direct writes from any other package. |
+| `firm-db-migrations` | `runMigrations(connStr, options?)`, `checkDrift()` (CI gate: fails on schema/definition mismatch), `generateMigration(name)`, `rollback(steps, connStr)` (non-prod only), `getTenantMigrationState(tenantId)`, `recordTenantMigration(tenantId, version)`. CLI: `pnpm db:migrate`, `db:check-drift`, `db:generate`. |
+| `firm-db-seed` | Deterministic idempotent seed data for all three tiers. `seedPlatform(db)`, `seedAgency(db)`, `seedSubAccount(db, agencyId)`, `seedLeads(db, tenantId, count)`, `seedCampaigns(db, tenantId)`, `clearTenant(db, tenantId)`. Fixed random seed by default for reproducible integration tests. Uses `withTenantContext()` to respect RLS during seeding. |
+| `firm-cache` | Tenant-scoped Redis client. `CacheKeyFactory(tenantId)` auto-prefixes all keys. Tag-based invalidation with `scope: 'local'\|'global'` (global is no-op initially — interface fixed from start). `lock(key, fn, ttl)` — distributed lock via Redlock (multi-node) or SETNX+TTL (single-node). Prometheus counters: `firm.cache.hit`/`miss` tagged with hashed `tenantId`, `keyPrefix`, `layer`. TTL Zod-validated at `set()` call site. |
+| `firm-idempotency` | `createIdempotencyStore(redis)` — tenant-scoped. `withIdempotency(key, fn, options)` — check → execute → store; handles in-flight duplicates. `IdempotencyKey` branded type (prevents raw strings). `generateIdempotencyKey(namespace, inputs)` — deterministic server-side keys. `parseIdempotencyHeader(request)`. TTL default 24h. Same key + different body → `IDEMPOTENCY_CONFLICT`. |
+| `firm-query` | `createTenantQuery(db, tenantId)` — scoped helper, auto-calls `withTenantContext`, verifies `TenantId` type. `withSoftDeleteFilter(query)`, `paginateCursor<T>(query, options)`, `withAuditFields()`, `batchQuery<T>(ids, fn)`, `withOptimisticLock(table, id, version)`. **Prerequisite for all L6 packages.** |
+| `firm-pagination` | `PaginatedResponse<T>` — `{ data, nextCursor, prevCursor, hasNextPage, totalCount? }`. `encodeCursor(value)`, `decodeCursor(cursor)` (returns `FirmError` if tampered). `createPageSchema<T>(itemSchema)`. Constants: `DEFAULT_PAGE_SIZE = 25`, `MAX_PAGE_SIZE = 100`. `OffsetPage` for admin list views. |
+| `firm-ports` | 22 typed Port interfaces extracted from `firm-types` (different versioning cadence, different consumers). `CRMPort`, `EmailPort`, `SMSPort`, `StoragePort`, `AnalyticsPort`, `AITextPort`, `AIImagePort` (return type includes `c2paManifestMetadata`), `SocialPort`, `AdsPort`, `SEOPort`, `ReviewsPort`, `BookingSystemPort`, `CalendarSyncPort`, `PaymentsPort`, `AccountingPort`, `ProjectMgmtPort`, `ProposalPort`, `ChatPort`, `VideoPort`, `DesignPort`, `AutomationPort`, `PDFPort`, `EmailValidationPort`, `TelephonyPort`, `VoiceAgentPort`, `VoicemailDropPort`, `ObservabilityTagPort`, `ExperimentationPort`. Plus `createPortMock<T extends Port>()` — type-safe mock factory. Port versioning via `@since` JSDoc tags. **Prerequisite for all L7 adapters.** |
+| `firm-schema-registry` | Machine-readable registry of all event/API schema versions and status (active/deprecated/sunset). `validateSchemaCompatibility(old, new)` — breaking-change detection (new required field = breaking; removal = breaking). `generateContractArtifacts(registry)` → OpenAPI, AsyncAPI 3.0, JSON Schema for `contracts/v1/`. CI gate rejects PRs with breaking schema changes without version bump. Consumer tracking maps package → accepted versions for safe sunset. |
+| `firm-sdk` | Typed tenant-aware TypeScript client for the platform API. Generated from tRPC router in `firm-api-contracts`. Sub-exports: `@firm/sdk/node` (pooling, streaming), `@firm/sdk/browser` (fetch, tree-shakeable). `FirmClient.withTenant(tenantId)` mandatory entry point — no tenant-unscoped operations. `verifyWebhookSignature(payload, sig, secret)`. Parses `X-RateLimit-Remaining` and surfaces warnings. |
 
 ---
 
-### 2.7 Layer 5 — UI, Theming & Testing
+### 2.4 L3 — Identity, Security & Consent
 
-**Packages:**
-- `firm‑tokens`: design tokens (W3C DTCG) → CSS custom properties, TypeScript constants. Same package as Layer 0 but at runtime its CSS output is consumed by `firm‑ui`. **Build‑time pipeline; no runtime import of `@firm/tokens` allowed (enforced by ESLint).**
-- `firm‑ui`: shared component library organised into five sub‑exports:
-  - `@firm/ui/primitives` — Button, Input, Select, Textarea, Checkbox, Radio, Switch, Badge, Avatar, Icon
-  - `@firm/ui/composed` — Form, FormField, Modal, Toast, Table, Card, Tabs, Accordion, Dropdown, Combobox
-  - `@firm/ui/layout` — Page, Sidebar, Topbar, Container, Grid, Stack, Divider
-  - `@firm/ui/dataviz` — Chart wrappers (Nivo, with documented decision)
-  - `@firm/ui/marketing` — Hero, CTA, FeatureGrid, Testimonial, PricingCard
-  Uses Radix UI as headless primitive layer. Every component meets WCAG AA for keyboard navigation, focus management, and ARIA roles. All variants must have Storybook stories before considered complete. Theming injected via `data‑theme` and CSS custom properties using values pre‑resolved by `firm‑tenant‑config` (Layer 6) — `firm‑ui` never fetches configuration itself.
-- `firm‑theme‑provider`: React context provider that receives tenant branding (resolved server‑side) and exposes it for CSS variable injection. Formerly named `firm‑config` (renamed to avoid collision with Layer 0).
-- `firm‑testing`: shared test harnesses and fixtures. Includes:
-  - `createUnitHarness()` — PGLite + ioredis‑mock
-  - `createIntegrationHarness()` — real DB + Redis, isolated tenant lifecycle
-  - `createE2eHarness()` — full stack, Playwright‑backed
-  - `createTenantIsolationFixture()` — sets up two tenants, asserts zero data bleed
-  - `mockAdapter<T extends Port>()` — fully type‑safe mock for any Port
-  - `createOutboxHarness()` — captures outbox events without full DB transaction
+**Rules:** Per-request CSP nonce on dynamic pages — `unsafe-inline`/`unsafe-eval` never allowed. All rate limits reference named policies in `firm-rate-limiter`'s registry — inline limits cause build failure. `SessionContext` deeply frozen after creation. RBAC matrix lives in a single file; every protected route calls `requirePermission()`. Consent is a structural gate, not a UI preference — GPC forces denial of marketing/analytics. Every privileged action writes an immutable audit record with cryptographic checksum.
 
-**Key patterns:**
-- Token pipeline from single DTCG file. Never hand‑edit generated output.
-- Every component uses `var(--firm‑…)` – hardcoded visual values fail CI.
-- Theme contrast validated before storage (WCAG AA). Inaccessible combinations rejected.
+| Package | Provides |
+|---------|----------|
+| `firm-security` | CSP generation + security headers. Named rate-limiting policy registry (engine is in `firm-rate-limiter`). Turnstile verification. Tag registry — third-party scripts gated by consent; every tag requires `integrity` SRI hash and declared consent category. C2PA manifest generation (EU AI Act Art. 50). `validateOutboundUrl(url, options)` — SSRF protection: enforces `https://`, blocks RFC 1918, loopback, link-local 169.254.x.x. `generateSriHash(scriptContent)`. `buildCsp(nonce, tenantId, consentedTags)` — integrates `firm-consent` state. |
+| `firm-rate-limiter` | Redis-backed sliding window + token-bucket rate limiter. Plan-tier-aware limits (Starter/Pro). Named policy registry = single source of truth. `responseMode: 'hard'\|'graduated'` — graduated: warn at 80% (`X-RateLimit-Warning`), throttle at 90%, block at 100%. `setEmergencyOverride(policyName, limits, ttl)` — hot-reload without deployment. `scope: 'local'\|'global'` from start (multi-region ready). `registerAdaptivePolicy(name, triggerFn)` — feedback hook. Fail-open when Redis unreachable (CRITICAL log + alert). Dry-run mode for tuning. |
+| `firm-auth` | Session management (frozen immutable `SessionContext`). RBAC — single permission matrix: `platform-admin`, `agency-admin`, `sub-account-admin`, `sub-account-user`. `requirePermission(action, resource, context?)` — `context` param reserved for ABAC extension (omitting it later is a breaking change). API keys: constant-time HMAC, `scope: PermissionScope[]`, `expiresAt`, `ipAllowlist?: CIDR[]`, `rateLimit?: PolicyName`. TOTP MFA. Passkey/WebAuthn: `credentialId` + `credentialType: 'totp'\|'passkey'\|'magic-link'` reserved in session schema. `refreshSession(refreshToken)`, `revokeSession(sessionId)`, `RevocationStore`. Secure impersonation/delegation with audit logging. `validateCorsOrigin(origin, tenantId)` backed by `firm-tenant-config`. SCIM orchestration: `onUserProvisioned`, `onUserDeprovisioned`, `onGroupUpdated`. `createDelegatedSession(userId, agentId, scope, ttl)` — AI agent delegation. |
+| `firm-consent` | Full GDPR/CCPA lifecycle: HMAC-signed server-side cookie parsing. GPC detection → overrides marketing/analytics consent (`gpcApplied` flag in signed payload). Google Consent Mode v3 translation layer (deadline: Jun 15). TCF 2.2 consent string encoding for EU programmatic ads. React-level rendering gate — unconsented scripts never injected. `shouldTrackEmail(userId, tenantId, jurisdiction): boolean` — CNIL pixel suppression. Consent state change events written to `firm-audit` (GDPR Art. 7(1)). |
+| `firm-policy` | `PolicyRule`, `evaluate(request): PolicyDecision`. `createRbacMatrix(matrix)`, `createAbacPolicy(rules)`. `PermissionGuard` — React + server-side guard component. Decision caching (TTL 30–60s). Deny decision → auto-write to `firm-audit`. |
 
 ---
 
-### 2.8 Layer 6 — Feature Packages & Workers
+### 2.5 L4 — Observability & Health
 
-**Purpose:** Business capabilities + background processing.
+**Rules:** Every service must produce structured logs, metrics, and distributed traces — three-pillar requirement enforced pre-production and continuously. Readiness probe fails if OpenTelemetry SDK is not exporting spans — no traffic routed until resolved. Liveness probes never touch external dependencies. PII never appears in plaintext in logs, errors, or Sentry events.
 
-**Package inventory (4 tiers):**
-
-**Tier A – Core Infrastructure (12 → 13):**
-- `firm‑bus`: event bus + outbox reader, retries (exponential backoff, dead‑letter), cron jobs, sagas with compensation. *Execution model (Inngest vs. custom) is under formal ADR; the package interface remains abstracted.*
-- `firm‑flags`: feature flags (boolean, rollout, segments, plan‑gated). Mandatory expiration on temporary flags (CI enforced).
-- `firm‑metering`: resource usage recording (leads, emails, AI tokens, storage, API calls) per tenant per period. **Primary API: `checkQuota(tenantId, dimension, amount)`** — rejects operations before overage. Quota warning event at 80% utilisation. `recordUsage()` for post‑operation recording. Used by quotas and billing.
-- `firm‑audit`: immutable, cryptographically chained audit log of all write operations.
-- `firm‑tenant‑config`: resolves per‑tenant config (branding, features, SEO, consent) via cache→DB→migration→Zod. Emits `tenant‑config.updated` event for CDN and theme invalidation. Supports merge‑with‑defaults and 5‑version rollback.
-- `firm‑template‑engine`: template rendering for emails, SMS, PDFs, webhooks (version history, locale vars, preview). Uses Liquid for email/SMS, Handlebars for PDF (pending ADR).
-- `firm‑notifications`: multi‑channel delivery (email, SMS, push, in‑app). Supports digest batching, per‑channel retry policies, and unread count persistence.
-- `firm‑webhooks`: outbound delivery to tenant endpoints; signs payloads, retries, logs.
-- `firm‑sse`: Server‑Sent Events delivery channel for real‑time updates to dashboards and client portals.
-- `firm‑media`: multi‑provider file storage, image/video processing, metadata stripping, CDN. Tenant‑scoped via path prefix. Enforces storage quota via `checkQuota()`.
-- `firm‑search`: full‑text search (tenant isolation via index partitions or PostgreSQL RLS). Architecture decided by ADR.
-- `firm‑i18n`: translation keys, locale‑aware formatting (dates, numbers, currencies, addresses), RTL support, ICU MessageFormat pluralisation.
-- `firm‑sdk`: **Relocated to Layer 2** (no business logic).
-
-**Tier B – Operations (8):**
-- `firm‑provisioning`: tenant lifecycle (creation, plan changes, suspension, offboarding with GDPR erasure). Idempotent, compensable. Dry‑run mode for validation.
-- `firm‑compliance`: GDPR/CCPA engine: right‑to‑erasure sagas (immediate anonymisation → export → retention → hard deletion), data portability, data residency enforcement check (GDPR Art. 32), Art. 30 report generation.
-- `firm‑projects`: project/task management, time tracking (billable/non‑billable), kanban, client‑facing status. Task dependency tracking and client‑internal visibility flags.
-- `firm‑sales‑pipeline`: CRM deal pipeline (leads→stages→won/lost), conversion forecasting. Formerly `firm‑pipeline`; renamed to avoid ambiguity.
-- `firm‑documents`: document generation (PDF) and e‑signature. Includes collaborative internal review, multi‑signatory support, and document open/view analytics. Proposals are a subtype, not a separate package.
-- `firm‑appointments`: calendar management, booking pages, staff availability, buffer times, group appointments, no‑show policies.
-- `firm‑workflow`: internal process automation (“when X → do Y” rules, visual builder). *Condition model, state machine, and trigger types are under formal ADR.*
-- `firm‑integrations`: unified dashboard for all third‑party connections (health, OAuth, usage analytics). Composite health scoring and proactive OAuth token refresh.
-
-**Tier C – Revenue (3):**
-- `firm‑subscriptions`: plan lifecycle (upgrades, trials, cancellation), grace periods, grandfathering support. Reads entitlements from `firm‑flags` and usage from `firm‑metering`.
-- `firm‑payments`: payment transactions (Stripe Customer, charges, refunds, disputes). Supports split payments and multi‑method storage.
-- `firm‑billing`: invoicing, revenue recognition, dunning, financial reporting. Multi‑currency, tax jurisdiction detection, aging reports.
-
-**Tier D – Client‑Facing & Marketing Execution (12):**
-- `firm‑portal`: white‑label client portal with per‑sub‑account module config and portal activity audit.
-- `firm‑inbox`: unified conversation inbox with assignment, SLA tracking, and tagging.
-- `firm‑reporting`: analytics engine (pre‑computed metrics, branded PDF/email reports). Uses dedicated CQRS read model. Report scheduling, anomaly detection, shareable links.
-- `firm‑cms`: headless CMS with content staging, SEO metadata management, multilingual locale fallback.
-- `firm‑forms`: form builder with conditional logic, multi‑step, partial save/resume, field‑level abandonment analytics.
-- `firm‑landing‑pages`: landing page builder (block‑based, A/B testing, Core Web Vitals tracking per variant).
-- `firm‑funnels`: marketing automation (multi‑step behaviour‑driven sequences, cross‑channel). Funnel analytics and pause/resume.
-- `firm‑social`: cross‑platform social media management (calendar, scheduling, approvals). Outbound only; inbound DMs routed to `firm‑inbox` via `social.dm.received` event.
-- `firm‑seo`: keyword rank tracking, backlink monitoring, technical SEO audits, structured data management, SERP feature detection.
-- `firm‑reputation`: review monitoring, competitor tracking, SLA‑driven response time, AI‑suggested replies (human‑approval gate enforced).
-- `firm‑ads`: paid ad campaign management (Google, Meta, LinkedIn, TikTok), UTM parameter management, creative performance, ad fatigue detection.
-- `firm‑ai‑content`: AI generation services (content, images) with **mandatory Human‑Approval Gate** — output always `pending_approval`, only `approveContent()` with `content:approve` permission sets `approved`, C2PA manifests generated and stored. Compliance‑sensitive package (EU AI Act Aug 2, NY disclosure Jun 9).
-
-**Additional Tier A package added:**
-- `firm‑ai`: AI infrastructure layer — provider client management via adapters, token counting, cost metering, model routing, rate limiting. **No generation logic, no approval gates.** Home for analytical AI (lead scoring, personalisation). Split from `firm‑ai‑content` per ADR; the two packages together replace the original single `firm‑ai`.
-
-**Universal Layer 6 rules:**
-- Named exports only; `exports` field = public API.
-- Test coverage ≥80%.
-- `console.log` banned; use `firm‑logger`.
-- Database access via typed helpers from `firm‑db‑client` only.
-- Pinned dependencies via workspace protocol & catalog.
-- All async work via transactional outbox; `firm‑bus` picks up events. Workers live in `workers/`, import from feature packages, never from `apps/`.
-
-**Additional domain rules:**
-- AI content `pending_approval` → `approved` only via approval gate. No bypass.
-- `firm‑search` tenant isolation: must choose (external index partitions + per‑tenant keys) or PostgreSQL RLS, documented pre‑implementation.
-- `firm‑reporting` uses separate denormalised read schema; no direct writes. Dedicated connection pool.
-- Metered operations **must** call `checkQuota()` before execution; CI static analysis enforces this.
-- `firm‑workflow` (internal ops) and `firm‑funnels` (external marketing) have strictly separate bounded contexts, enforced by event contracts.
+| Package | Provides |
+|---------|----------|
+| `firm-observability` | Init utilities for logs, traces (OpenTelemetry), metrics (Prometheus), error tracking (Sentry), RUM. `withSpan(name, fn)`, `withTenantSpan(name, tenantId, fn)` — automatically attaches `tenantId`, `userId`, `correlationId` to spans. Dual-level PII redaction: field-path stripping + regex scanner. Log sampling: errors/warnings never dropped; health-check logs sampled at configurable rate. Distributed tracing via W3C Trace Context: browser → API → worker → adapter. |
+| `firm-health` | Kubernetes-style probes. Liveness: event-loop only. Readiness: all critical deps in parallel + RLS coverage check + `observabilityHealthCheck()` (OTel init + span export verified). Startup: bootstrap sequence. RLS probe: queries `pg_tables` for `rowsecurity=true`; any missing table → `unhealthy`, deployment blocked. |
 
 ---
 
-### 2.9 Layer 7 — Adapters
+### 2.6 L5 — UI, Theming & Testing
 
-**Purpose:** Sole path between internal platform and external services. Feature packages must never call third‑party SDKs directly – only through adapters implementing **Port** interfaces (defined in `firm‑types`).
+**Rules:** Token pipeline from single DTCG source file — never hand-edit generated output. Every component uses `var(--firm-…)` — hardcoded visual values fail CI. Theme contrast validated before storage (WCAG AA); inaccessible combinations rejected. `firm-testing` produces zero production artifacts.
 
-**Adapter categories & providers (105 total planned):**
+| Package | Provides |
+|---------|----------|
+| `firm-tokens` | W3C DTCG design tokens → CSS custom properties + TypeScript constants. Same source as L0; at runtime, CSS output is consumed by `firm-ui`. No runtime import of `@firm/tokens` — ESLint enforced. |
+| `firm-ui` | Shared component library. Sub-exports: `@firm/ui/primitives` (Button, Input, Select, Textarea, Checkbox, Radio, Switch, Badge, Avatar, Icon), `@firm/ui/composed` (Form, FormField, Modal, Toast, Table, Card, Tabs, Accordion, Dropdown, Combobox), `@firm/ui/layout` (Page, Sidebar, Topbar, Container, Grid, Stack, Divider), `@firm/ui/dataviz` (Nivo chart wrappers), `@firm/ui/marketing` (Hero, CTA, FeatureGrid, Testimonial, PricingCard). Radix UI headless primitive layer. WCAG AA: keyboard navigation, focus management, ARIA roles. All variants require Storybook stories before merge. Theming via `data-theme` + CSS custom properties resolved by `firm-tenant-config` server-side — `firm-ui` never fetches config itself. |
+| `firm-theme-provider` | React context provider receiving tenant branding (resolved server-side) and exposing it for CSS variable injection. Formerly `firm-config` — renamed to avoid collision with 13 L0 `firm-config-*` packages. |
+| `firm-testing` | `createUnitHarness()` — PGLite + ioredis-mock. `createIntegrationHarness()` — real DB + Redis, isolated tenant lifecycle. `createE2eHarness()` — full stack, Playwright-backed. `createTenantIsolationFixture()` — sets up two tenants, asserts zero data bleed. `mockAdapter<T extends Port>()` — type-safe mock for any Port. `createOutboxHarness()` — captures outbox events without full DB transaction. |
+
+---
+
+### 2.7 L6 — Features & Workers
+
+**Universal rules:** Named exports only; `exports` field = public API. Test coverage ≥80%. `console.log` banned. DB access via `firm-db-client` typed helpers only. All async work via transactional outbox; `firm-bus` dispatches. Workers live in `workers/` (renamed from `services/`), import from feature packages, never from `apps/`. `checkQuota()` must be called before every metered operation — CI static-analysis gate (Gate New2) enforces this. AI content output is always `pending_approval`; only `approveContent()` with `content:approve` permission sets `approved` — no bypass. `firm-workflow` (internal ops) and `firm-funnels` (external marketing) have strictly separate bounded contexts enforced by event contracts.
+
+#### Tier A — Core Infrastructure (14)
+
+| Package | Responsibility |
+|---------|---------------|
+| `firm-bus` | Event bus + outbox reader, retries (exponential backoff, dead-letter), cron jobs, sagas with compensation. Execution model (Inngest vs. custom outbox) is under formal ADR — interface abstracted regardless of outcome. |
+| `firm-flags` | Feature flags: boolean, rollout %, segments, plan-gated. Temporary flags require `expiresAt` — CI enforces. Expired flag evaluates `false`. Redis unreachable → returns `defaultValue` (logged + alerted). |
+| `firm-metering` | Usage recording per tenant per period (leads, emails, AI tokens, storage, API calls). `checkQuota(tenantId, dimension, amount)` — pre-operation enforcement; rejects before overage. `recordUsage()` — post-operation. Emits `metering.quota.warning` at 80% utilisation. |
+| `firm-audit` | Immutable, cryptographically chained audit log. `writeAuditRecord`, `verifyAuditChain`, `exportAuditLog`, `createAuditMiddleware()`, `AuditedOperation<T>`, `expungeRecord` (GDPR erasure only). SQL hash chain — tamper-detectable. |
+| `firm-tenant-config` | Resolves per-tenant config (branding, features, SEO, consent) via cache → DB → migration → Zod. Emits `tenant-config.updated` for CDN + theme invalidation. Merge-with-defaults; 5-version rollback. |
+| `firm-template-engine` | Template rendering: emails, SMS, PDFs, webhooks. Version history, locale vars, preview. Liquid for email/SMS; Handlebars for PDF (ADR pending). |
+| `firm-notifications` | Multi-channel delivery: email, SMS, push, in-app. Digest batching, per-channel retry policies, unread count persistence. |
+| `firm-webhooks` | Outbound delivery to tenant endpoints. Signs payloads (HMAC), retries with exponential backoff, logs delivery attempts. |
+| `firm-sse` | Server-Sent Events delivery channel for real-time dashboard and portal updates. |
+| `firm-media` | Multi-provider file storage, image/video processing, metadata stripping, CDN. Tenant-scoped via path prefix. Enforces storage quota via `checkQuota()`. |
+| `firm-search` | Full-text search with tenant isolation (external index partitions + per-tenant keys, OR PostgreSQL RLS — documented before implementation per ADR). |
+| `firm-i18n` | Translation keys, locale-aware formatting (dates, numbers, currencies, addresses), RTL support, ICU MessageFormat pluralisation. |
+| `firm-ai` | AI infrastructure: provider client management via L7 adapters, token counting, cost metering, model routing, rate limiting. No generation logic, no approval gates. Home for analytical AI: lead scoring, personalisation. |
+| `firm-policy` | *(see L3 — cross-layer; governs access decisions consumed by L6 packages)* |
+
+#### Tier B — Operations (8)
+
+| Package | Responsibility |
+|---------|---------------|
+| `firm-provisioning` | Tenant lifecycle: creation, plan changes, suspension, offboarding (GDPR erasure). Idempotent, compensable sagas. Inherit-and-detach model for sub-accounts (copy, not link, agency defaults). Dry-run mode. |
+| `firm-compliance` | GDPR/CCPA engine: right-to-erasure sagas (anonymise → export → retain → hard delete), data portability, residency enforcement (GDPR Art. 32), Art. 30 report generation. |
+| `firm-projects` | Project/task management, time tracking (billable/non-billable), kanban, client-facing status. Task dependency tracking. `ProjectTemplate` aggregate + `createProjectFromTemplate()`. |
+| `firm-sales-pipeline` | CRM deal pipeline (leads → stages → won/lost), conversion forecasting. `lead.scored` event (payload: `leadId`, `score`, `confidence`, `scoringModelVersion`, `factors[]`) emitted by `firm-ai`, consumed here. Formerly `firm-pipeline`. |
+| `firm-documents` | Document generation (PDF), e-signature, collaborative review, multi-signatory, document analytics. Proposals are a subtype. DOCX/HTML template merge fields (`{{client.name}}`, `{{deal.amount}}`). |
+| `firm-appointments` | Calendar management, booking pages, staff availability, buffer times, group appointments, no-show policies. Round-robin assignment + collective booking (distinct from group appointments). |
+| `firm-workflow` | Internal process automation ("when X → do Y"). Visual builder. Condition model, state machine, trigger types, and compensation model defined by ADR-007 before any build. |
+| `firm-integrations` | Unified dashboard for all third-party connections: health, OAuth, usage analytics. Composite health scoring. Proactive OAuth token refresh → `getValidToken(providerId, tenantId)` for adapter injection. |
+
+#### Tier C — Revenue (3)
+
+| Package | Responsibility |
+|---------|---------------|
+| `firm-subscriptions` | Plan lifecycle: upgrades, trials, cancellation, grace periods, grandfathering. Reads entitlements from `firm-flags`, usage from `firm-metering`. `computeUsageCharge(tenantId, billingPeriod): UsageLineItem[]`. |
+| `firm-payments` | Payment transactions: Stripe Customer, charges, refunds, disputes. Split payments, multi-method storage. Two-tier idempotency: financial webhooks (Stripe, Paddle, PayPal) → PostgreSQL; others → Redis. |
+| `firm-billing` | Invoicing, revenue recognition, dunning, financial reporting. Multi-currency, tax jurisdiction detection, aging reports. `SplitRule` aggregate (platform % + agency %) for white-label reseller revenue share. |
+
+#### Tier D — Client-Facing & Marketing (12)
+
+| Package | Responsibility |
+|---------|---------------|
+| `firm-portal` | White-label client portal. Per-sub-account module config. Portal activity audit. |
+| `firm-inbox` | Unified conversation inbox: assignment, routing, SLA tracking, tagging. All inbound channels converge here (email, SMS, social DMs via `social.dm.received`, chat). |
+| `firm-reporting` | Pre-computed metrics, branded PDF/email reports, CQRS read model (dedicated connection pool, no direct writes). Report scheduling, anomaly detection, shareable links. |
+| `firm-cms` | Headless CMS: content staging, SEO metadata, multilingual locale fallback. |
+| `firm-forms` | Form builder: conditional logic, multi-step, partial save/resume, field-level abandonment analytics, CRM field-mapping validation at publish time. |
+| `firm-landing-pages` | Block-based page builder, A/B testing, Core Web Vitals tracking per variant. Pixels fire only after consent granted. |
+| `firm-funnels` | Multi-step behaviour-driven marketing automation, cross-channel. Funnel analytics, pause/resume. Entry rate, step completion, drop-off tracked. |
+| `firm-social` | Cross-platform social: calendar, scheduling, approvals. Outbound only — inbound DMs route to `firm-inbox` via `social.dm.received` event. |
+| `firm-seo` | Keyword rank tracking, backlink monitoring, technical SEO audits, structured data management, SERP feature detection. |
+| `firm-reputation` | Review monitoring, competitor tracking, SLA response-time monitoring. AI-suggested replies with mandatory human-approval gate — no auto-publishing. |
+| `firm-ads` | Ad performance aggregation, budget alerts, UTM management, creative performance, ad fatigue detection, frequency cap alerts. |
+| `firm-ai-content` | AI content + image generation. Output always `pending_approval`. `approveContent()` requires `content:approve` permission. C2PA manifest generated and stored (EU AI Act Art. 50 — deadline Aug 2). NY Synthetic Performer disclosure embedded in `ai_generation_log` (deadline Jun 9). |
+
+---
+
+### 2.8 L7 — Adapters
+
+**Rules:** Feature packages never call third-party SDKs directly — only through Port interfaces defined in `firm-ports`. All adapters generated via scaffolding generator (never hand-authored). Generator simultaneously produces adapter package, stub, and Port conformance test. Every adapter must: `implements <Port>`; lazy-init client from `firm-env`; transform provider types → canonical types; verify webhook signatures (constant-time, raw body only); expose Prometheus metrics (call count, latency, errors); map provider errors → `FirmError`; wrap every external call in `firm-circuit-breaker`; receive `getValidToken(providerId, tenantId)` as constructor dependency (platform-managed OAuth refresh via `firm-integrations`). Naming convention: `adapters-<category>-<provider>`.
+
+**Webhook security (non-negotiable):** Constant-time signature verification. Replay protection: ±5 min timestamp tolerance + idempotency key store. Raw request body only for HMAC — parsed payload untrusted. Financial webhooks (Stripe, Paddle, PayPal) → PostgreSQL idempotency store; all others → Redis.
 
 | Category | Count | Providers |
 |----------|-------|-----------|
-| **CRM** | 7 | HubSpot, Salesforce, GoHighLevel, Pipedrive, Zoho, ActiveCampaign, Keap |
-| **Email** | 6 | Resend, SendGrid, SES, Postmark, SMTP, Mailgun |
-| **SMS** | 4 | Twilio, Vonage, MessageBird, Sinch |
-| **Analytics** | 5 | GA4, Plausible, Fathom, Mixpanel, PostHog |
-| **CRO** | 4 | Hotjar, CrazyEgg, Optimizely, VWO |
-| **SEO Data** | 4 | SearchConsole, Semrush, Ahrefs, Moz |
-| **Paid Ads** | 4 | Google Ads, Meta Ads, LinkedIn Ads, TikTok Ads |
-| **CMS** | 4 | Sanity, Strapi, Directus, Contentful |
-| **Booking** | 4 | Cal.com, Google Calendar, Outlook, Acuity |
-| **Payments** | 4 | Stripe, Paddle, PayPal, Square |
-| **Accounting** | 3 | QuickBooks, Xero, FreshBooks |
-| **AI Models** | 4 | OpenAI, Anthropic, Google AI, Azure OpenAI |
-| **AI Image Gen** | 2 | OpenAI (DALL‑E), Stability AI |
-| **Social** | 4 | Meta, Twitter, LinkedIn, TikTok |
-| **Reviews** | 3 | Google Business, Trustpilot, Yelp |
-| **Proposals** | 4 | PandaDoc, Qwilr, DocuSign, Dropbox Sign |
-| **Project Mgmt** | 4 | Asana, Trello, Monday, ClickUp |
-| **Design** | 3 | Figma, Canva, Adobe CC |
-| **Video** | 4 | YouTube, Vimeo, Wistia, Mux |
-| **Chat** | 4 | Intercom, Drift, Tidio, WhatsApp |
-| **SCIM** | 2 | Okta, Azure AD |
-| **PDF Generation** | 2 | Puppeteer (self‑hosted), PdfShift (cloud) |
-| **Video Conferencing** | 3 | Zoom, Google Meet, Microsoft Teams |
-| **Email Validation** | 3 | ZeroBounce, NeverBounce, Kickbox |
-| **Local Storage** | 1 | Local (filesystem‑based for development) |
-| **Voice** | (future) | Reserved for VoicePort |
+| CRM | 7 | HubSpot, Salesforce, GoHighLevel, Pipedrive, Zoho, ActiveCampaign, Keap |
+| Email | 6 | Resend, SendGrid, SES, Postmark, SMTP, Mailgun |
+| SMS | 4 | Twilio, Vonage, MessageBird, Sinch |
+| Analytics | 5 | GA4, Plausible, Fathom, Mixpanel, PostHog |
+| Observability Tags | 2 | Hotjar, CrazyEgg |
+| Experimentation | 2 | Optimizely, VWO |
+| SEO | 4 | Search Console, Semrush, Ahrefs, Moz |
+| Paid Ads | 4 | Google Ads, Meta Ads, LinkedIn Ads, TikTok Ads |
+| CMS | 4 | Sanity, Strapi, Directus, Contentful |
+| Booking Systems | 2 | Cal.com, Acuity |
+| Calendar Sync | 2 | Google Calendar, Outlook |
+| Payments | 4 | Stripe, Paddle, PayPal, Square |
+| Accounting | 3 | QuickBooks, Xero, FreshBooks |
+| AI Models | 4 | OpenAI, Anthropic, Google AI, Azure OpenAI |
+| AI Image Gen | 2 | OpenAI DALL-E, Stability AI |
+| Social | 4 | Meta, Twitter/X, LinkedIn, TikTok |
+| Reviews | 3 | Google Business Profile, Trustpilot, Yelp |
+| Proposals | 4 | PandaDoc, Qwilr, DocuSign, Dropbox Sign |
+| Project Mgmt | 4 | Asana, Trello, Monday, ClickUp |
+| Design | 3 | Figma, Canva, Adobe CC |
+| Video | 4 | YouTube, Vimeo, Wistia, Mux |
+| Chat | 3 | Intercom, Drift, Tidio |
+| SCIM | 2 | Okta, Azure AD |
+| PDF Generation | 2 | Puppeteer (self-hosted), PdfShift (cloud) |
+| Video Conferencing | 3 | Zoom, Google Meet, Microsoft Teams |
+| Email Validation | 3 | ZeroBounce, NeverBounce, Kickbox |
+| Storage (Cloud) | 4 | S3, R2, Azure Blob, GCS — 🔴 production blocker for `firm-media` |
+| Storage (Local) | 1 | Filesystem — dev only |
+| Speech-to-Text | 4 | Deepgram, AssemblyAI, Whisper, Google STT |
+| Messaging / WhatsApp | 3 | Meta Business, Twilio WhatsApp, 360dialog |
+| Telephony | 4 | Twilio Voice, Telnyx, Vonage, Plivo |
+| Voice AI Agents | 3 | Vapi, Retell AI, Bland AI |
+| Voicemail Drop | 2 | Drop Cowboy, Slybroadcast |
+| iPaaS | 3 | Zapier, Make, n8n |
+| E-Commerce | 3 | Shopify, WooCommerce, Stripe Connect |
+| Team Communication | 3 | Slack, Microsoft Teams, Discord |
+| Data Enrichment | 4 | Clearbit, Apollo, Hunter, ZoomInfo |
+| Tax Calculation | 3 | Avalara, TaxJar, Stripe Tax |
+| Map Listings | 4 | Google Business Profile, Apple Maps, Yext, Bing Places |
+| Push Notifications | 3 | FCM, APNs, OneSignal |
+| Translation | 3 | DeepL, Google Translate, AWS Translate |
+| Fraud Detection | TBD | TBD |
+| Identity Verification | TBD | TBD |
+| Link Shortener | TBD | TBD |
+| AI Video Gen | TBD | TBD |
+| Text-to-Speech | TBD | TBD |
 
-**Naming convention:** `adapters-<category>-<provider>` (e.g., `adapters‑crm‑hubspot`). Packages live in subdirectories grouped by category (`packages/layer7‑adapters/crm/adapters‑crm‑hubspot`) for discoverability while retaining flat pnpm workspace names. An auto‑generated `REGISTRY.md` maps every adapter to its Port interface and status.
+**Auto-generated registry:** `packages/layer7-adapters/REGISTRY.md` maps every adapter to its Port, stub status, and conformance test status. Regenerated on every adapter creation. CI (Gate 13) validates registry matches packages on disk.
 
-**Universal adapter structure (every adapter must have):**
-- `implements <Port>` (public export)
-- Lazy client initialisation from env vars (via `firm‑env`)
-- Transform functions: provider‑specific → canonical types
-- Webhook signature verification: constant‑time compare, raw body only
-- Prometheus metrics (call count, latency, errors)
-- Provider error → `FirmError` mapping
-- Generated via the adapter scaffolding generator (not hand‑authored). The generator simultaneously produces an adapter package, a stub, and a Port conformance test.
+Here is §3, §4, §5, §6, and §7 — the remainder of the Blueprint.
 
-**Webhook security (non‑negotiable):**
-- Constant‑time signature verification.
-- Replay protection: timestamp tolerance (±5 min) + idempotency key store.
-- Raw request body only for HMAC; parsed payload untrusted.
+***
 
----
+## §3 Immutable Stress-Test Commitments
 
-## Section 3: Immutable Stress‑Test Commitments
-
-Four non‑negotiable guarantees. Enforced by automated mechanisms (Section 4). No exceptions.
+Four non-negotiable guarantees. Enforced by automated mechanisms (§4). No exceptions, no feature-flag bypasses, no temporary waivers.
 
 ---
 
 ### 3.1 Tenant Isolation
 
-**Commitment:** Every tenant’s data/config/assets invisible to others at same hierarchy level. Exception: deliberate, audited parent‑child relationship – agency tenant can access its own sub‑accounts. Sibling sub‑accounts strictly isolated.
+**Commitment:** Every tenant's data, config, and assets are invisible to others at the same hierarchy level. Exception: deliberate, audited parent-child relationships — an agency admin may access its own sub-accounts. Sibling sub-accounts are strictly isolated.
 
-**What this means:**
-- Request for Sub‑Account A never returns data from Sub‑Account B.
-- Compromised sub‑account credentials: blast radius limited to that sub‑account.
-- Agency admin *may* view aggregated/individual data across sub‑accounts – scoped, audited, not default.
-- Platform admins: any cross‑tenant action audited and scoped to single tenant.
+**What this means in practice:**
+- A request for Sub-Account A never returns data from Sub-Account B.
+- Compromised sub-account credentials: blast radius limited to that sub-account only.
+- Agency admins may view aggregated or individual data across their sub-accounts — scoped, audited, and not the default.
+- Platform admins: any cross-tenant action is audited and scoped to a single tenant at a time.
 
 **Enforcement (architectural):**
-- `tenant_id` column on every tenant‑scoped table. `tenants` table has `parent_tenant_id` (nullable) and `tenant_type` (`agency|sub_account|platform`).
-- Row‑Level Security (RLS) on every tenant‑scoped table:
-  - Default policy: `tenant_id = current_setting('app.current_tenant_id')::uuid`.
-  - Agency‑admin policy: `tenant_id IN (SELECT id FROM tenants WHERE parent_tenant_id = current_setting(...))`.
-- `setTenantContext()` sets `app.current_tenant_id` and, for agency admins, a parent‑scope flag.
-- API request extracts tenant ID from headers/JWT before business logic. `CrossTenantAccessError` (HTTP 403) on violation – never 404 (avoid existence confirmation).
+- `tenant_id` column on every tenant-scoped table. The `tenants` table carries `parent_tenant_id` (nullable) and `tenant_type` (`agency | sub_account | platform`).
+- Row-Level Security (RLS) on every tenant-scoped table:
+  - Default policy: `tenant_id = current_setting('app.current_tenant_id')::uuid`
+  - Agency-admin policy: `tenant_id IN (SELECT id FROM tenants WHERE parent_tenant_id = current_setting(...))`
+- `withTenantContext()` sets `app.current_tenant_id` and, for agency admins, a parent-scope flag. The PgBouncer-safe RESET wrapper in `firm-db-client` clears both on connection release.
+- API requests extract `tenantId` from JWT/session before any business logic. `CrossTenantAccessError` (HTTP 403) on violation — never 404 (never confirm resource existence across tenants).
 - Background workers restore tenant context from outbox event metadata.
 
 ---
 
 ### 3.2 Usage Control
 
-**Commitment:** Resource‑intensive operations protected by probabilistic admission gating and explicit pre‑operation quota checks. Prevents any single tenant/user from overwhelming shared infrastructure or exceeding their plan limits silently.
+**Commitment:** Resource-intensive operations are protected by pre-operation quota checks and plan-aware rate limiting. No tenant silently exceeds their plan limits; no single tenant can overwhelm shared infrastructure.
 
-**What this means:**
-- Bulk export of 500k leads cannot starve other clients’ resources.
-- Brute‑force login attacks thwarted by sliding‑window rate limiting.
-- Expensive ops (AI generation, large file processing) throttled per tenant based on service tier.
-- Metered operations (email sends, AI tokens, file storage) are checked *before* execution – not discovered as overages afterward.
+**What this means in practice:**
+- Bulk export of 500k leads cannot starve other clients' DB connections.
+- Brute-force login attacks are blocked by sliding-window rate limiting.
+- AI generation, large file processing, and email sends are throttled per tenant per service tier.
+- Metered operations are checked *before* execution — not discovered as overages afterward.
 
 **Enforcement (architectural):**
-- Every rate‑limited endpoint references a **named policy** (e.g., `auth-login`). Policies defined in single auditable file in `firm-rate-limiter`. No inline overrides.
-- Sliding‑window limiter backed by Redis. Redis unreachable → fail open (logged, alerted).
-- Token‑bucket admission control for expensive ops, concurrency limited by tenant’s service tier.
-- `firm-metering.checkQuota(tenantId, dimension, amount)` is the mandatory pre‑operation enforcement point for all billable and quota‑limited actions. A CI static‑analysis gate ensures it is called before any metered operation in feature packages.
-- All limits surfaced in response headers (`X-RateLimit-Remaining`, `X-RateLimit-Reset`).
+- Every rate-limited endpoint references a **named policy** defined in `firm-rate-limiter`'s policy registry. No inline limits — inline values cause build failure.
+- Sliding-window limiter backed by Redis. Redis unreachable → fail-open, logged and alerted.
+- Token-bucket admission for expensive ops; concurrency limited by tenant's service tier.
+- `graduated` response mode: warn at 80% (`X-RateLimit-Warning`), throttle at 90%, block at 100%.
+- `firm-metering.checkQuota(tenantId, dimension, amount)` is the mandatory pre-operation enforcement point. CI static-analysis gate ensures it is called before any metered operation in every feature package.
+- All limits surfaced in response headers: `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 
 ---
 
 ### 3.3 Event Reliability
 
-**Commitment:** No business event ever silently lost. Events triggering critical side effects are persisted before transaction commit, and every event is processed at least once. The entire event catalog is externally verifiable through automatically generated AsyncAPI contracts.
+**Commitment:** No business event is ever silently lost. Events triggering critical side effects are persisted atomically before transaction commit. Every event is processed at least once. The complete event catalog is externally verifiable through a machine-generated, versioned AsyncAPI contract.
 
-**What this means:**
-- Form submission → lead created, welcome email sent, CRM updated → all happen even if server crashes immediately after.
-- Email provider down: retry with exponential backoff; after max attempts, move to dead‑letter queue.
-- Payment processed but outbox worker crashes → event re‑delivered; idempotency key prevents duplicates.
-- External webhook consumers and the platform SDK rely on a machine‑generated, versioned AsyncAPI document that describes every event type and version the platform may emit.
+**What this means in practice:**
+- Form submission → lead created, welcome email sent, CRM updated — all happen even if the server crashes immediately after.
+- Email provider down: retry with exponential backoff; after max attempts, move to dead-letter queue.
+- Payment processed but outbox worker crashes: event is re-delivered; idempotency key prevents duplicates.
+- External webhook consumers and SDK integrators rely on a machine-generated, committed AsyncAPI 3.0 document describing every event type and version the platform may emit.
 
 **Enforcement (architectural):**
-- **Transactional outbox pattern:** within same DB transaction as business data, insert into `outbox_events`. Atomicity: transaction rollback removes both data and event.
+- **Transactional outbox:** within the same DB transaction as business data, insert into `outbox_events`. If transaction rolls back, event is atomically removed — no phantom events.
 - Separate worker reads outbox, dispatches to handlers, marks `completed` on success.
-- Failure: increment `attempts`, schedule retry with exponential backoff. After max attempts → dead‑letter queue.
-- **Idempotency keys** in every event. Handlers check before action – prevents double‑booking, double‑charging, duplicate sends.
-- Long‑running workflows as state‑driven **sagas** with explicit compensation paths. Step failure → reverse previous steps (e.g., refund, cancel).
-- **AsyncAPI generation gate** (CI Gate 16): `scripts/ci/generate-asyncapi.ts` reads the Event Registry, produces an AsyncAPI 3.0 `asyncapi.yaml`, and fails the build if any registered event lacks a channel definition. This makes the event guarantee auditable.
+- Failure: increment `attempts`, schedule retry with exponential backoff. After max attempts → dead-letter queue, alert.
+- **Idempotency keys** in every event. Handlers check before acting — prevents double-booking, double-charging, duplicate sends.
+- Long-running workflows modelled as **sagas** with explicit compensation paths. Step failure → reverse prior steps (e.g., refund, cancel, de-provision). Saga state schema (`saga_instances`) is defined in `firm-db-schema` at Layer 2 — keeping the saga contract schema-governed, not implicit in the Layer 6 implementation.
+- **AsyncAPI generation gate (Gate 16):** `scripts/ci/generate-asyncapi.ts` reads the EventRegistry, produces AsyncAPI 3.0, and fails the build if any registered event lacks a channel definition.
 
 ---
 
 ### 3.4 Schema Governance
 
-**Commitment:** Shape of every DB table, API response, event payload, and validation rule defined in a single auditable location. ORM schemas and event schemas never drift. Events versioned; every consumer declares accepted versions. Versioned, distributable schema artifacts are produced by an automated build pipeline and committed as the canonical contract for external consumers.
+**Commitment:** The shape of every DB table, API response, event payload, and validation rule is defined in a single auditable location. ORM schemas and event schemas never drift. Events are versioned; every consumer declares accepted versions. Versioned, distributable schema artifacts are produced by an automated build pipeline and committed as the canonical contract for external consumers.
 
-**What this means:**
-- Adding `preferredContactMethod` to `Lead` → DB migration, Zod validator, TS interface, API response, and event payloads all reflect change. Build‑time check ensures consistency.
+**What this means in practice:**
+- Adding `preferredContactMethod` to `Lead` → DB migration, Zod validator, TS interface, API response, and event payloads all reflect the change. Build-time check enforces consistency.
 - Breaking event change: new version (e.g., `lead.created v2`). Old handlers continue receiving v1 until they explicitly support v2.
-- Handler never receives payload shape it hasn’t declared it can process.
-- The OpenAPI, AsyncAPI, and JSON Schema artifacts in `contracts/v1/` exactly match the current codebase state and can be used by external integrators and SDK generators with confidence.
+- A handler never receives a payload shape it hasn't declared it can process.
+- The `contracts/v1/` OpenAPI, AsyncAPI, and JSON Schema artifacts exactly match the codebase state and can be used by external integrators and SDK generators with confidence.
 
 **Enforcement (architectural):**
-- All Zod schemas in `firm-validators` satisfy compile‑time check against corresponding TS interface in `firm-types`.
-- DB schemas in `firm-db-schema` are single source of truth; migrations generated, not hand‑written.
-- **Event Registry** in `firm-api-contracts` sole authority for every event type + version. Every event definition includes mandatory `version`. Handlers declare `acceptsVersions` range.
+- All Zod schemas in `firm-validators` satisfy compile-time check against the corresponding TS interface in `firm-types`.
+- DB schemas in `firm-db-schema` are the single source of structural truth; migrations are generated, not hand-written. `firm-db-migrations.checkDrift()` runs in CI; any divergence fails the build.
+- **Event Registry** in `firm-events` is the sole authority for every event type + version. `defineEvent()` is the only constructor. Handlers declare `acceptsVersions`.
 - CI event inventory check: every emitted event version has at least one registered handler that accepts it.
-- Cross‑reference manifest maps schemas → validators → events (with versions) → table definitions. Discrepancy fails build.
-- **Schema build pipeline** (CI stage after event checks): `scripts/ci/schema-build.ts` produces `contracts/v1/openapi.json`, `contracts/v1/asyncapi.yaml`, and `contracts/v1/events.schema.json`. Committed artifacts must match generated output; mismatch → build fails.
+- Cross-reference manifest maps schemas → validators → events (with versions) → table definitions. Any discrepancy fails the build.
+- **Schema build pipeline (Gate 17):** `scripts/ci/schema-build.ts` produces `contracts/v1/openapi.json`, `contracts/v1/asyncapi.yaml`, and `contracts/v1/events.schema.json`. Committed artifacts must exactly match generated output; mismatch → build fails.
 
 ---
 
-## Section 4: Cross‑Cutting Enforcement Mechanisms
+## §4 Cross-Cutting Enforcement Mechanisms
 
-All rules mechanically enforced on every code change.
+All rules are mechanically enforced on every code change. Human review is insufficient — CI is the enforcer.
 
 ---
 
-### 4.1 Package‑Boundary Enforcement
+### 4.1 Package-Boundary Enforcement
 
-**Rule:** Packages may only import from same or lower layer. Upward/circular imports forbidden. Additional structural rules: feature packages must not call `fetch()` directly (all external calls must go through adapters); only outbox event handlers may write to the CQRS read model.
+**Rule:** Packages may only import from the same or lower layer. Upward and circular imports are forbidden. Feature packages must not call `fetch()` directly. Only `firm-bus` event handlers may write to the CQRS read model.
 
 **Enforcement:**
-1. **ESLint `boundaries` plugin** – each package type (`primitives|config|core|security|observability|ui|features|workers|adapters`) with allowed dependencies. `workers` added as a named boundary type.
-2. **ESLint `no‑direct‑fetch` rule** – flags any `fetch()` call in feature packages; external communication must go through Layer 7 adapters.
-3. **ESLint `no‑direct‑read‑model‑write` rule** – prevents direct database writes to the CQRS read schema from feature packages; only `firm‑bus` event handlers are permitted.
-4. **`dep‑fence` script** – walks dependency graph; catches dynamic imports, re‑exports, layer violations.
-5. **`exports` field verification** – script ensures no import of unlisted internal paths.
+1. **ESLint `boundaries` plugin** — each package type (`primitives | config | core | security | observability | ui | features | workers | adapters`) declares allowed dependencies. `workers` is a named boundary type.
+2. **ESLint `no-direct-fetch` rule** — flags any `fetch()` call in feature packages; all external communication must go through Layer 7 adapters.
+3. **ESLint `no-direct-read-model-write` rule** — prevents direct DB writes to the CQRS read schema from any package except `firm-bus` event handlers.
+4. **`dep-fence` script** — walks the full dependency graph; catches dynamic imports, re-exports, and layer violations that static analysis misses.
+5. **`exports` field verification** — script ensures no import of unlisted internal paths succeeds.
 
-**Violation:** Build fails → correct import or layer reassignment via ADR.
+**Violation:** Build fails. Correct the import or reassign the package to a different layer via ADR.
 
 ---
 
 ### 4.2 Interface Freezes
 
-**Rule:** Before implementing an adapter/feature/worker, its TypeScript interfaces must be frozen. Breaking changes require documented proposal.
+**Rule:** Before implementing an adapter, feature package, or worker, its TypeScript interfaces must be frozen. Breaking changes require a documented proposal and a new freeze tag.
 
 **Enforcement:**
-1. **Git tag** `iface‑freeze/v1-*`. CI blocks modifications to frozen files.
-2. **TypeScript `satisfies` checks** – Zod schemas must satisfy frozen interface.
-3. **Adapter conformance** – `implements` on class; missing methods or wrong types fail compilation.
+1. **Git tag** `iface-freeze/v1-*`. CI blocks modifications to frozen files without the `breaking-change` label and an architecture reviewer approval.
+2. **TypeScript `satisfies` checks** — Zod schemas must satisfy the frozen interface.
+3. **Adapter conformance** — `implements <Port>` on every adapter class; missing methods or wrong return types fail compilation.
 
-**Violation:** Build fails. Breaking interface requires unfreezing via formal proposal, review, new freeze tag.
+**Violation:** Build fails. Breaking an interface requires unfreezing via formal proposal, review, and a new freeze tag.
 
 ---
 
 ### 4.3 Event Registry Enforcement
 
-**Rule:** Every event type + version must be registered in central `EventRegistry`. Handlers declare `acceptsVersions`. Emitting unregistered event or unsupported version impossible.
+**Rule:** Every event type and version must be registered in the central `EventRegistry`. Handlers declare `acceptsVersions`. Emitting an unregistered event or an unsupported version is impossible.
 
 **Enforcement:**
-1. **`defineEvent()`** – only event constructor. Requires mandatory `version`. Auto‑registers.
-2. **CI event inventory check** – scans `emitEvent()` calls; cross‑references registry. Unregistered event → build fails.
-3. **CI event versioning check** – every emitted version must have ≥1 handler whose `acceptsVersions` includes it. No handler → fail.
-4. **Outbox validation** – `emitEvent()` validates payload against registered Zod schema (for that version). CI pre‑validates payload types.
+1. **`defineEvent()`** — the only event constructor. Requires mandatory `version`. Auto-registers in the `EventRegistry`.
+2. **CI event inventory check** — scans all `emitEvent()` calls; cross-references the registry. Unregistered event → build fails.
+3. **CI event versioning check** — every emitted version must have at least one handler whose `acceptsVersions` includes it.
+4. **Outbox validation** — `emitEvent()` validates payload against the registered Zod schema for that version.
 
-**Violation:** Build fails (unregistered or unmatchable version). Runtime rejection (caught by CI before deploy).
+**Violation:** Build fails (unregistered or unhandled version). No path to production.
 
 ---
 
-### 4.4 Row‑Level Security (RLS) Coverage Tests
+### 4.4 RLS Coverage Tests
 
-**Rule:** Every tenant‑scoped table must have RLS enabled + sibling isolation + parent visibility verified.
+**Rule:** Every tenant-scoped table must have RLS enabled, sibling isolation verified, and parent visibility verified.
 
 **Enforcement:**
-1. **Migration hook** – Drizzle `afterMigrate` auto‑applies RLS policies (default + parent‑agency) to tables in `tenantScopedTables`.
-2. **`firm‑health` RLS probe** – readiness probe checks `pg_tables` for `rowsecurity=true`. Any missing → `unhealthy`, deployment blocked.
-3. **CI sibling isolation test** – create data as Sub‑Account A, switch to Sub‑Account B (same parent), attempt read → expect zero results.
-4. **CI parent visibility test** – create data as Sub‑Account A, switch to parent agency admin → data visible. Verify parent cannot write (RLS read‑only).
+1. **Migration hook** — Drizzle `afterMigrate` auto-applies RLS policies (default + parent-agency) to all tables in `tenantScopedTables`.
+2. **`firm-health` RLS probe** — readiness probe queries `pg_tables` for `rowsecurity=true`. Any missing table → `unhealthy`, deployment blocked.
+3. **CI sibling isolation test** — create data as Sub-Account A, switch to Sub-Account B (same parent), attempt read → expect zero results. Required on every PR that touches a tenant-scoped table.
+4. **CI parent visibility test** — create data as Sub-Account A, switch to parent agency admin → data visible. Verify parent cannot write (RLS read-only policy).
 
-**Violation:** Migration fails if policies incomplete. CI test fails → build blocked. RLS probe fails → deployment blocked.
+**Violation:** Migration fails if policies are missing. CI tests fail → build blocked. Health probe fails → deployment blocked.
 
 ---
 
 ### 4.5 Tag Governance
 
-**Rule:** Every third‑party script tag must be registered in `TagRegistry` (`firm-security`). Unregistered scripts cannot render.
+**Rule:** Every third-party script tag must be registered in the `TagRegistry` (`firm-security`). Unregistered scripts cannot render.
 
 **Enforcement:**
-1. **`TagRegistry`** – sole script source. ESLint rule (`no‑inline‑third‑party‑scripts`) flags manual `<script>` tags.
-2. **Consent category validation** – each tag declares required category (`analytics|marketing|functional`). Missing/invalid → build fails.
-3. **Subresource Integrity (SRI) hash required** – every tag must have valid `integrity` field. CI verifies; missing hash → reject.
+1. **`TagRegistry`** — sole script source. ESLint rule (`no-inline-third-party-scripts`) flags manual `<script>` tags anywhere in the codebase.
+2. **Consent category validation** — each tag declares required category (`analytics | marketing | functional`). Missing or invalid category → build fails.
+3. **SRI hash required** — every tag entry must carry a valid `integrity` field. CI verifies; missing hash → build fails.
 
-**Violation:** Build fails (unregistered, missing category, missing SRI). Runtime: tag never injected.
+**Violation:** Build fails (unregistered, missing category, missing SRI). Runtime: tag is never injected into the page.
 
 ---
 
 ### 4.6 Feature Flag Expiration
 
-**Rule:** Temporary feature flags must carry expiration date. Expired flags break build. Flags must handle Redis unavailability via circuit‑breaker behaviour (return `defaultValue`).
+**Rule:** Temporary feature flags must carry an expiration date. Expired flags break the build. Flags must handle Redis unavailability by returning `defaultValue`.
 
 **Enforcement:**
-1. **Flag definition** – mandatory `expiresAt` field (UTC timestamp). Permanent flags use `never` marker.
-2. **CI expiration check** – script checks each flag’s `expiresAt` against current date. Past expiration → build fails.
-3. **Runtime defense** – expired flag evaluates as `false` + alert. Redis unreachable → flag returns its `defaultValue` (logged and alerted).
+1. **Flag definition** — mandatory `expiresAt` (UTC timestamp) on temporary flags. Permanent flags use the `never` marker.
+2. **CI expiration check** — script compares each flag's `expiresAt` against the current date. Past expiration → build fails.
+3. **Runtime defense** — expired flag evaluates as `false` + fires an alert. Redis unreachable → flag returns `defaultValue`, logged and alerted.
 
-**Violation:** Build fails if any temporary flag expired.
+**Violation:** Build fails if any temporary flag is past expiration.
 
 ---
 
 ### 4.7 PII Redaction Verification
 
-**Rule:** No PII (email, phone, SSN) ever appears in plaintext in logs, errors, or Sentry events.
+**Rule:** No PII (email address, phone number, SSN, IP address) ever appears in plaintext in logs, errors, or Sentry events.
 
 **Enforcement:**
-1. **Dual‑level redaction (`firm-logger`)** – field‑path stripping (e.g., `user.email`) + regex pattern scanner. Both must pass.
-2. **CI redaction test** – feed known PII‑containing object through logger; grep output for PII values. Any plaintext → build fails.
-3. **Sentry PII filter** – identical redaction rules. CI validates Sentry event filtering.
+1. **Dual-level redaction (`firm-logger`)** — field-path stripping (e.g., `user.email`) AND regex pattern scanner. Both layers must pass.
+2. **CI redaction test** — feeds a known PII-containing object through the logger; greps output for PII values. Any plaintext PII → build fails.
+3. **Sentry PII filter** — identical redaction rules applied to Sentry events. CI validates Sentry filtering.
 
-**Violation:** Build fails if any PII appears unredacted. Runtime defensive redaction prevents emission (CI gate primary).
+**Violation:** Build fails if any PII appears unredacted. Runtime defensive redaction provides a secondary safety net; the CI gate is primary.
 
 ---
 
 ### 4.8 CI Pipeline Specification
 
-Sequence (any failure blocks pipeline):
+The pipeline runs on every PR and every merge to `main`. Any stage failure blocks the pipeline entirely.
 
-**Stage / Guards**
-- **Supply‑Chain Security** – `npm audit` (fail on high/critical CVEs) + license scanner (reject GPL for SaaS)
-- **Boundary Check** – ESLint `boundaries` + `no‑direct‑fetch` + `no‑direct‑read‑model‑write` + `dep‑fence` (Section 2 layer hierarchy)
-- **Type Check** – `tsc --noEmit` (strict preset)
-- **Lint** – ESLint (style, imports, branded‑ID asserts, no `console.log`)
-- **Adapter Scaffolding Verification** – every adapter must be generated by the scaffolding script; stubs and conformance tests must exist
-- **Unit & Integration Tests** – Vitest (coverage ≥80%)
-- **Event Registry Check** – AST scan of `emitEvent()` against registry (3.4)
-- **Event Versioning Check** – every emitted version has handler accepting it (3.4)
-- **Event Schema Validation** – payload satisfies registered Zod schema (3.4)
-- **RLS Coverage Check** – `firm‑health` probe + sibling/parent tests (3.1)
-- **RLS Integration Test (Sibling)** – cross‑tenant data leak test (3.1)
-- **RLS Integration Test (Parent)** – agency visibility (3.1)
-- **Quota Check Enforcement** – static analysis verifying `checkQuota()` is called before any metered operation
-- **PII Redaction Test** – log capture + grep (4.7)
-- **Feature Flag Expiration** – scan flag definitions (4.6)
-- **Tag Registry Integrity** – all third‑party scripts registered, consented, SRI hashed (4.5)
-- **Observability Instrumentation** – AST check for `initializeObservability()` in every entry point (3‑pillar requirement)
-- **Package `exports` Verification** – no import of unlisted internal paths
-- **AsyncAPI Generation** – `scripts/ci/generate‑asyncapi.ts` reads EventRegistry, validates against AsyncAPI 3.0, fails if any event lacks a channel definition
-- **Schema Build** – `scripts/ci/schema‑build.ts` produces `contracts/v1/openapi.json`, `contracts/v1/asyncapi.yaml`, `contracts/v1/events.schema.json`; committed artifacts must match generated output
-- **Build** – `tsup` via Turborepo
+| # | Stage | What it checks |
+|---|-------|---------------|
+| 1 | Supply-Chain Security | `npm audit` (block high/critical CVEs) + license scanner (reject GPL for SaaS) |
+| 2 | Boundary Check | ESLint `boundaries` + `no-direct-fetch` + `no-direct-read-model-write` + `dep-fence` |
+| 3 | Type Check | `tsgo --noEmit` (strict config) |
+| 4 | Lint | ESLint: style, imports, branded-ID asserts, no `console.log` |
+| 5 | Adapter Scaffolding Verification | Adapter directory structure matches generated template; stub + conformance test present |
+| 6 | Unit & Integration Tests | Vitest, coverage ≥80% (line/function/branch/statement) |
+| 7 | Event Registry Check | AST scan of `emitEvent()` calls against `EventRegistry` |
+| 8 | Event Versioning Check | Every emitted version has at least one handler accepting it |
+| 9 | Event Schema Validation | Payload satisfies registered Zod schema for that version |
+| 10 | RLS Coverage Check | `firm-health` probe + sibling/parent isolation tests |
+| 11 | RLS Sibling Test | Sub-Account A data invisible to Sub-Account B |
+| 12 | RLS Parent Test | Agency admin sees sub-account data; cannot write |
+| 13 | Adapter Interface Compliance | Port conformance tests pass for all adapters in PR |
+| New1 | Quota Check Enforcement | Static analysis: `checkQuota()` present before every metered operation |
+| 14 | PII Redaction Test | Log capture + grep for known PII patterns |
+| 15 | Feature Flag Expiration | Scan all flag definitions for past-expiry `expiresAt` |
+| 16 | Tag Registry Integrity | All third-party scripts registered, consented, SRI-hashed |
+| 17 | Observability Instrumentation | AST check for `initializeObservability()` in every service entry point |
+| 18 | Package `exports` Verification | No import of unlisted internal paths |
+| 19 | AsyncAPI Generation | `generate-asyncapi.ts` maps all registered events to channels; fails on missing channel definition |
+| 20 | Schema Build | `schema-build.ts` generates `contracts/v1/`; committed artifacts must match generated output |
+| 21 | Build | `tsdown` via Turborepo (dual-pass: JS + type declarations) |
 
 ---
 
-### 4.9 Pre‑Merge Validation Gates
+### 4.9 Pre-Merge Validation Gates
 
-**Gate 1: Test Coverage Minimum**
-- Rule: Packages Layers 1‑7 ≥80% coverage (lines, branches, functions, statements).
-- Enforcement: Vitest `coverage.thresholds` per package. CI stage fails if below. Waiver requires documented, time‑bound architect approval.
+**Gate 1 — Test Coverage Minimum**
+- Rule: All packages Layers 1–7 must maintain ≥80% coverage (lines, branches, functions, statements).
+- Enforcement: Vitest `coverage.thresholds` per package. Waiver requires documented, time-bound architect approval.
 - Violation: PR cannot merge.
 
-**Gate 2: Schema Freeze Check**
-- Rule: After freeze tag (`iface‑freeze/*`), frozen files cannot be modified without `breaking‑change` label + architecture reviewer approval.
-- Enforcement: CI detects freeze tag, requires label and extra reviewer (branch protection).
+**Gate 2 — Schema Freeze Check**
+- Rule: After `iface-freeze/*` tag, frozen files cannot be modified without the `breaking-change` label and an architecture reviewer approval.
+- Enforcement: CI detects freeze tag, enforces label requirement and extra reviewer via branch protection.
 - Violation: PR cannot merge.
 
-**Gate 3: Database Migration Safety**
-- Rule: Any PR adding/modifying tenant‑scoped table must include RLS policy (same migration) + isolation test.
-- Enforcement: CI script inspects migration for `CREATE TABLE` in `tenantScopedTables` → checks for `ENABLE ROW LEVEL SECURITY` and `CREATE POLICY`. Also checks for new/updated isolation test in `firm‑db‑schema` suite.
+**Gate 3 — Database Migration Safety**
+- Rule: Any PR adding or modifying a tenant-scoped table must include the RLS policy in the same migration file and a new isolation test.
+- Enforcement: CI inspects migration for `CREATE TABLE` entries in `tenantScopedTables`; checks for `ENABLE ROW LEVEL SECURITY` and `CREATE POLICY`. Also checks for a corresponding isolation test in `firm-db-schema` test suite.
 - Violation: PR cannot merge.
 
-**Gate 4: Adapter Scaffolding Gate (new)**
+**Gate 4 — Adapter Scaffolding Gate**
 - Rule: Any new adapter must be created via the adapter scaffolding generator. Stub and conformance test must be included in the same PR.
-- Enforcement: CI verifies adapter directory structure matches generated template. Manually authored adapters fail.
+- Enforcement: CI verifies adapter directory structure matches the generated template. Manually authored adapters fail.
 - Violation: PR cannot merge.
 
 ---
 
-### 4.10 Post‑Deployment Verification
+### 4.10 Post-Deployment Verification
 
-**Gate 1: Health Endpoint Probing**
-- Rule: Load balancer queries `/health/readiness`. If probe fails, no traffic routed.
-- Enforcement: Readiness probe includes `rlsHealthCheck()` and dependency checks. Failure → deployment marked unhealthy, rollback triggered.
+**Gate 1 — Health Endpoint Probing**
+- Load balancer queries `/health/readiness` after every deploy. Failure → no traffic routed, rollback triggered.
+- Readiness probe includes `rlsHealthCheck()`, all critical dependency checks, and `observabilityHealthCheck()` (OTel span export verified).
 
-**Gate 2: Synthetic Smoke Tests**
-- Rule: After deployment passes health checks, automated smoke tests run against live deployment. Failure → alert, optional rollback.
-- Enforcement: `SyntheticCheckManager` in `firm‑health/synthetic` defines checks (lead creation, notification, auth flow, consent gate, observability export). Runner executes every 5 minutes. Alert on failure; probation‑period rollback optional.
+**Gate 2 — Synthetic Smoke Tests**
+- After health check passes, automated smoke tests run against the live deployment.
+- `SyntheticCheckManager` in `firm-health/synthetic` defines checks: lead creation, notification dispatch, auth flow, consent gate, and observability export.
+- Runner executes every 5 minutes. Alert on failure; probation-period rollback optional.
 
 ---
 
 ### 4.11 Adapter Scaffolding Enforcement
 
-**Rule:** Every adapter in Layer 7 must be produced by the canonical adapter scaffolding generator. Manually authored adapters are not accepted. The generator simultaneously creates the adapter package, a test stub implementing the same Port, and a Port conformance test.
+**Rule:** Every Layer 7 adapter must be produced by the canonical adapter scaffolding generator. Manually authored adapters are not accepted.
 
 **Enforcement:**
-1. **Generator CLI** – `pnpm turbo gen adapter` scaffolds `adapters-<category>-<provider>` with uniform structure (implements Port, lazy client, error mapping, metrics, webhook verify‑deduplicate‑process).
-2. **CI verification** – checks adapter directory structure against the generated template. Any deviation → build fails.
-3. **Conformance test** – every adapter must pass a Port conformance test that verifies all methods return canonical types and that error mapping produces `FirmError`.
-
-**Violation:** Build fails (non‑conforming or hand‑authored adapter). Adapters missing stubs or conformance tests rejected at PR.
+1. **Generator CLI** — `pnpm turbo gen adapter` scaffolds `adapters-<category>-<provider>` with the uniform structure: `implements <Port>`, lazy client init, transform functions, error mapping, Prometheus metrics, `verifyWebhookSignature`, deduplication, and process steps.
+2. **CI verification** — compares adapter directory structure against the generated template. Any deviation → build fails.
+3. **Simultaneous output** — generator produces the adapter package, a stub, and a Port conformance test in the same run. A PR that contains only the adapter without both the stub and conformance test is rejected.
 
 ---
 
 ### 4.12 Quota Check Enforcement
 
-**Rule:** Every metered operation in a feature package must call `firm‑metering.checkQuota()` before executing the chargeable action. Metering after the fact is not a substitute for pre‑operation enforcement.
+**Rule:** Every metered operation in a feature package must call `firm-metering.checkQuota()` before executing the chargeable action.
 
 **Enforcement:**
-1. **Static analysis** – CI script scans feature package source for calls to known metered operations (`recordUsage`, AI SDK calls, email send, media upload, etc.) and ensures a preceding `checkQuota()` call exists in the same execution path.
-2. **Runtime defense** – `recordUsage()` emits a warning if `checkQuota()` was not called within the same request context, enabling production detection of circumvention.
-3. **Test requirement** – tests for metered operations must verify that exceeding a quota is rejected with `QuotaExceeded` *before* the operation executes.
-
-**Violation:** Build fails (missing `checkQuota()` call). PR rejected if test coverage for quota rejection is absent.
+1. **Static analysis** — CI script scans feature package source for calls to known metered operations (`recordUsage`, AI SDK calls, email send, media upload) and verifies a preceding `checkQuota()` call exists in the same execution path.
+2. **Runtime defense** — `recordUsage()` emits a `CRITICAL` warning if `checkQuota()` was not called within the same request context, enabling production detection of any circumvention.
+3. **Test requirement** — tests for metered operations must verify that exceeding a quota is rejected with `QuotaExceeded` *before* the operation executes.
 
 ---
 
 ### 4.13 AsyncAPI Generation Enforcement
 
-**Rule:** The complete event catalog must be externally verifiable. Every registered event type + version must appear as a channel in a machine‑generated AsyncAPI 3.0 contract.
+**Rule:** The complete event catalog must be externally verifiable. Every registered event type + version must appear as a channel in the machine-generated AsyncAPI 3.0 contract.
 
 **Enforcement:**
-1. **`scripts/ci/generate‑asyncapi.ts`** – reads the `EventRegistry` in `firm‑api‑contracts`, maps each event type to an AsyncAPI channel, and produces `contracts/v1/asyncapi.yaml`.
-2. **CI gate** – after event registry checks, the script runs. If any registered event has no corresponding channel (missing metadata, unregistered channel definition) → build fails.
-3. **Committed artifact** – the generated `asyncapi.yaml` is committed. Mismatch between committed and generated output → build fails, ensuring the contract is always current.
-
-**Violation:** Build fails (unmapped event, missing channel, or outdated committed artifact).
+1. `scripts/ci/generate-asyncapi.ts` reads the `EventRegistry`, maps each event type to a channel, and produces `contracts/v1/asyncapi.yaml`.
+2. If any registered event lacks a corresponding channel definition → build fails.
+3. The generated file is committed. Mismatch between committed and freshly-generated output → build fails, ensuring the contract is always current.
 
 ---
 
 ### 4.14 Schema Build Pipeline Enforcement
 
-**Rule:** Versioned, distributable schema artifacts representing the platform’s API and event contracts must be automatically generated from the single source of truth and committed. Consumers (external integrators, SDK generators) rely on these artifacts.
+**Rule:** Versioned, distributable schema artifacts must be automatically generated from the single source of truth and committed. External integrators and SDK generators depend on them.
 
 **Enforcement:**
-1. **`scripts/ci/schema‑build.ts`** – produces:
-   - `contracts/v1/openapi.json` (from tRPC/OpenAPI definitions in `firm‑api‑contracts`)
-   - `contracts/v1/asyncapi.yaml` (produced by the AsyncAPI generation gate above)
+1. `scripts/ci/schema-build.ts` produces:
+   - `contracts/v1/openapi.json` (from tRPC/OpenAPI definitions in `firm-api-contracts`)
+   - `contracts/v1/asyncapi.yaml` (from the AsyncAPI generation gate)
    - `contracts/v1/events.schema.json` (JSON Schema for all event payloads)
-2. **CI gate** – runs after event checks and AsyncAPI generation. Fails if any artifact cannot be generated or if the generated content does not match the committed file exactly.
-3. **Versioned contract** – breaking changes produce a new `v2/` directory with its own set of artifacts, preserving `v1/` for backward compatibility.
-
-**Violation:** Build fails (generation failure or committed artifact out of date).
+2. CI gate runs after all event checks. Fails if any artifact cannot be generated or if generated content does not match the committed file.
+3. **Breaking contract changes** produce a new `contracts/v2/` directory. `contracts/v1/` is preserved for backward compatibility.
 
 ---
 
-## Section 5: Data Flow Architecture
+## §5 Data Flow Architecture
 
-Canonical flows demonstrating layer dependencies and enforcement points (Sections 2‑4).
+Canonical flows demonstrating layer dependencies and enforcement points.
 
 ---
 
-### 5.1 Incoming HTTP Request (Create Lead) – with API Gateway
+### 5.1 Incoming HTTP Request (Create Lead)
 
 ```
-Browser/Client
+Browser / Client
     │
     ▼
 [Edge API Gateway]
-    │── Rate limiting (named policies from firm‑rate‑limiter)
+    │── Rate limiting (named policies from firm-rate-limiter)
     │── DDoS protection, WAF, IP rules
-    │── Forward X‑Tenant‑Id, X‑Correlation‑Id, traceparent
+    │── Forward X-Tenant-Id, X-Correlation-Id, traceparent
     ▼
-[Next.js Edge/Middleware]
-    │── firm‑config‑next: security headers (CSP nonce, HSTS)
-    │── firm‑request‑context: extract/create correlationId, traceId → AsyncLocalStorage
+[Next.js Edge / Middleware]
+    │── firm-config-next: CSP nonce, HSTS, security headers
+    │── firm-request-context: extract/create correlationId + traceId → AsyncLocalStorage
     ▼
-[Security Middleware: firm‑security]
-    │── CSRF (session‑bound, constant‑time)
-    │── Turnstile (if bot‑protected endpoint)
+[Security Middleware: firm-security]
+    │── CSRF (session-bound, constant-time)
+    │── Turnstile (if bot-protected endpoint)
     ▼
-[Rate Limiting: firm‑rate‑limiter]
-    │── Redis sliding window, named policy "api‑general"
-    │── Fail‑open if Redis unreachable → logged, alerted
+[Rate Limiting: firm-rate-limiter]
+    │── Redis sliding window, named policy "api-general"
+    │── Fail-open if Redis unreachable → logged + alerted
     ▼
-[Authentication: firm‑auth]
-    │── authenticateRequest() tries cookie → bearer → API key
+[Authentication: firm-auth]
+    │── authenticateRequest(): cookie → bearer → API key (priority order)
     │── Valid session → frozen SessionContext (userId, tenantId, permissions)
-    │── Invalid → 401/403
+    │── Invalid → 401 / 403
     ▼
-[Authorization: firm‑auth/permissions]
+[Authorization: firm-auth / permissions]
     │── requirePermission("lead:create") checks RBAC matrix
     │── Denied → 403
     ▼
-[Feature Handler: firm‑leads (future)]
-    │── Validate payload with firm‑validators (leadSchemaV2)
-    │── DB transaction via firm‑db‑client
-    │── INSERT leads (tenantId auto‑set by RLS)
-    │── INSERT outbox_events ("lead.created", version 2) within same transaction
-    │── COMMIT
+[Quota Check: firm-metering]
+    │── checkQuota(tenantId, 'leads', 1)
+    │── Exceeded → 429 QuotaExceeded
     ▼
-[Observability: firm‑observability]
-    │── withTenantSpan("createLead") captures trace with tenantId, userId, correlationId
+[Feature Handler: firm-leads]
+    │── Validate payload with firm-validators (leadSchemaV2)
+    │── DB transaction via firm-db-client.withTenantContext()
+    │── INSERT leads (tenant_id enforced by RLS)
+    │── INSERT outbox_events ("lead.created", version: 2) — same transaction
+    │── COMMIT
+    │── recordUsage(tenantId, 'leads', 1) — post-operation
+    ▼
+[Observability: firm-observability]
+    │── withTenantSpan("createLead"): tenantId, userId, correlationId auto-attached
     │── HTTP request metric incremented
     ▼
 [Response: 201 Created]
-    │── firm‑logger structured JSON (PII redacted)
-    │── TraceContext in response headers (traceparent)
+    │── firm-logger structured JSON (PII redacted)
+    │── traceparent in response headers
 ```
-
-**Demonstrates:** `firm‑rate‑limiter` as a standalone Layer 3 package, two‑layer rate limiting (edge + application), atomic outbox, automatic context propagation.
 
 ---
 
 ### 5.2 Authentication Flow (Detailed)
 
-Client sends credentials (cookie, bearer, API key). `authenticateRequest()` tries in priority order:
+`authenticateRequest()` tries strategies in priority order, short-circuits on first success:
 
-1. **Cookie present?** → `extractSessionFromCookie()` → `verifySession(token)` (Better Auth) → checks expiry, revocation, MFA → returns frozen `SessionContext`.
-2. **Bearer token?** (falls through if cookie fails) → same as above.
-3. **API key?** → `verifyApiKey(key, {ip, userAgent, endpoint})`:
+1. **Cookie present?** → `extractSessionFromCookie()` → `verifySession(token)` (Better Auth) → checks expiry, revocation, MFA state → returns frozen `SessionContext`.
+2. **Bearer token?** (falls through if cookie fails) → same verification path.
+3. **API key?** → `verifyApiKey(key, { ip, userAgent, endpoint })`:
    - Validate format (prefix `firm_`)
-   - Hash key → query DB by keyPrefix
-   - Constant‑time HMAC compare against stored hash
-   - Check active, not expired, rate‑limited, IP allowed
-   - Check sub‑account scoping: API key only authorises access to the issuing tenant
-   - Return permissions (no session object)
+   - Hash key → query DB by `keyPrefix`
+   - Constant-time HMAC compare against stored hash
+   - Check: active, not expired, not rate-limited, IP in allowlist
+   - Enforce sub-account scoping: API key only authorises access to the issuing tenant
+   - Return permissions (no full session object)
 
-**Key points:** Unified entry point, priority short‑circuit, constant‑time at every step, sub‑account scoping enforced at the API‑key level.
+**Key points:** Single unified entry point; constant-time at every step; sub-account scoping enforced at the API-key level; `SessionContext` deeply frozen after creation.
 
 ---
 
-### 5.3 Event‑Driven Outbox Flow
+### 5.3 Event-Driven Outbox Flow
 
 ```
 Business Operation (e.g., create lead)
     │
     ▼
 Database Transaction
-    │── INSERT/UPDATE business table (via firm‑db‑client)
-    │── INSERT outbox_events (event_type, version, payload) – same transaction
+    │── INSERT / UPDATE business table (via firm-db-client)
+    │── INSERT outbox_events (event_type, version, tenantId, payload) — same txn
     │── COMMIT
     ▼
-Outbox Worker (firm‑bus / Inngest)
+Outbox Worker (firm-bus)
     │── Poll outbox_events WHERE status='pending' AND nextAttemptAt <= now()
     │── For each event:
     │     ├─ markEventAsProcessing()
@@ -737,45 +692,44 @@ Outbox Worker (firm‑bus / Inngest)
     │     ├─ Success → markEventAsCompleted()
     │     └─ Failure:
     │           ├─ Increment attempts, exponential backoff
-    │           ├─ If attempts < max → status='failed' (retryable)
-    │           └─ If ≥ max → dead‑letter queue, alert
+    │           ├─ attempts < max → status='pending', scheduled retry
+    │           └─ attempts ≥ max → dead-letter queue, alert
     ▼
-Saga Orchestrator (multi‑step workflows)
-    │── Each step idempotent with compensating action
-    │── Saga state persisted in saga_instances table (defined in firm‑db‑schema – Layer 2)
-    │── Durable execution engine handles step failure, retry, and compensation
+Saga Orchestrator (multi-step workflows)
+    │── Each step idempotent with a compensating action
+    │── Saga state persisted in saga_instances table (firm-db-schema, Layer 2)
+    │── Step failure → compensation steps executed in reverse order
 ```
 
-**Demonstrates:** Explicit `version` in events, version‑specific schema validation, retries, dead‑letter, sagas. **Saga state schema lives at Layer 2** (`firm‑db‑schema`), not implicitly in the Layer 6 implementation — keeping the state contract formally governed.
+**Note:** Saga state schema (`saga_instances`) is defined at Layer 2 in `firm-db-schema`, not implicitly inside the Layer 6 implementation — keeping the saga contract formally schema-governed.
 
 ---
 
-### 5.4 Consent Resolution Flow (Server‑Side)
+### 5.4 Consent Resolution Flow (Server-Side)
 
-Request arrives at Next.js page/API route.
+Request arrives at Next.js page or API route:
 
-1. **`firm‑consent/server.ts`**:
-   - Parse cookie header → extract `firm_consent` cookie
-   - `parseSignedCookie()` – verify HMAC signature (constant‑time)
-   - Validate consent record structure, check expiration
-   - `getConsentFromHeaders()` returns `ConsentRecord` or `null`
+1. **`firm-consent/server.ts`:**
+   - Parse `Cookie` header → extract `firm_consent` cookie
+   - `parseSignedCookie()` — constant-time HMAC signature verification
+   - Validate `ConsentRecord` structure and expiration
+   - Returns `ConsentRecord | null`
 
-2. **Check GPC header** (`Sec‑GPC: 1`):
+2. **GPC check:**
    - `isGpcEnabledFromHeaders()` → `applyGpcOverrides(choices)` forces `analytics=false, marketing=false`
-   - `gpcApplied` flag set in the signed consent record for audit trail
+   - `gpcApplied` flag embedded in the signed consent record (GDPR audit trail)
+   - Banner cannot override GPC — it is a binding browser signal
 
-3. **Page/API logic**:
-   - `hasConsentFromHeaders('analytics')` → false → GA script not rendered
-   - `hasConsentFromHeaders('marketing')` → false → Facebook Pixel omitted
-   - `consentGate('functional', manager, () => <ChatWidget />)` – conditional rendering
+3. **Page/API logic:**
+   - `hasConsent('analytics')` → `false` → GA script not rendered
+   - `hasConsent('marketing')` → `false` → Facebook Pixel omitted from HTML
+   - `consentGate('functional', () => <ChatWidget />)` — conditional rendering
 
-4. **Response**:
-   - CSP nonce injected (per‑request)
-   - Google Consent Mode v3 translation fires before any Google tags if consent changed
-   - No third‑party scripts in HTML body unless consented
-   - `set‑cookie` may update consent expiration
-
-**Key points:** Consent resolved server‑side before HTML rendered – scripts structurally absent. GPC overrides stored consent and leaves an audit flag. Google Consent Mode v3 translation integrated with the CSP nonce pipeline.
+4. **Response:**
+   - Per-request CSP nonce injected
+   - Google Consent Mode v3 translation fires before any Google tags
+   - No third-party script appears in HTML body unless consented
+   - All consent state changes written to `firm-audit` (GDPR Art. 7(1))
 
 ---
 
@@ -783,44 +737,43 @@ Request arrives at Next.js page/API route.
 
 ```
 Incoming Request
-    │── W3C traceparent present? → extract traceId/spanId → set in firm‑request‑context
-    │── Otherwise generate new traceId/spanId
+    │── W3C traceparent present? → extract traceId/spanId → set in firm-request-context
+    │── Otherwise → generate new traceId/spanId
     ▼
-Any code in request flow:
-    │── withTenantSpan("createLead", (span) => { ... })
-    │      └─ Automatically attaches tenant.id, user.id, correlation.id as span attributes
+Any code in the request flow:
+    │── withTenantSpan("createLead", fn)
+    │      └─ Auto-attaches: tenant.id, user.id, correlation.id as span attributes
     │── logger.info("Lead created", { leadId })
-    │── platformMetrics.httpRequestsTotal.add(1, { tenant_id: ctx.tenantId })
+    │      └─ Reads tenantId/traceId from AsyncLocalStorage
+    │── platformMetrics.httpRequestsTotal.add(1, { tenant_id: hashedTenantId })
     ▼
-Outgoing call to external service (CRM adapter)
-    │── injectTraceContext(headers) adds traceparent to outbound HTTP
+Outgoing call to external service (CRM adapter):
+    │── injectTraceContext(headers) → adds traceparent to outbound HTTP request
     ▼
-Outbox Event persisted
-    │── Event metadata carries traceId, correlationId, tenantId
+Outbox event persisted:
+    │── Event metadata carries: traceId, correlationId, tenantId
     ▼
-Background Worker (firm‑bus) or standalone worker in workers/
-    │── Extracts traceId, correlationId from event metadata/inbound headers
-    │── Restores context via setRequestContext()
-    │── Worker spans = children of original request span
-    │── When calling external adapters, injectTraceContext() again
+Background Worker (firm-bus / any worker in workers/):
+    │── Extracts traceId + correlationId from event metadata or inbound headers
+    │── Restores via setRequestContext() — worker spans are children of the original request span
+    │── On external adapter calls: injectTraceContext() again
     ▼
-Full trace: Browser → API Gateway → Next.js → Outbox → Worker → Adapter → External API
+Full distributed trace: Browser → API Gateway → Next.js → Outbox → Worker → Adapter → External API
 ```
 
-**Key points:** Context survives every boundary (sync, outbox, any background worker in `workers/`) – restored identically via `setRequestContext()`. `withTenantSpan()` guarantees tenant context is never accidentally omitted from traces.
+**Key point:** Context survives every async boundary — HTTP, outbox, background workers. `withTenantSpan()` guarantees tenant context is never accidentally omitted from any span.
 
 ---
 
-### 5.6 Database Tenant Scoping (Three‑Tier Hierarchy)
+### 5.6 Database Tenant Scoping (Three-Tier Hierarchy)
 
 ```
-Pre‑condition: setTenantContext(tenantId, { isAgencyAdmin: false }) called
-    │── Done automatically by middleware or withTenantContext()
+Pre-condition: withTenantContext(tenantId, db, { isAgencyAdmin: false }) called by middleware
+    │
     ▼
-Inside withTenantContext(tenantId, db, opts?):
-    │── db.execute(`SET LOCAL app.current_tenant_id = ${tenantId}`)
-    │── If opts.isAgencyAdmin === true:
-    │       db.execute(`SET LOCAL app.current_agency_admin = true`)
+Inside withTenantContext():
+    │── SET LOCAL app.current_tenant_id = '<tenantId>'
+    │── if isAgencyAdmin: SET LOCAL app.current_agency_admin = 'true'
     ▼
 Query: db.select().from(leads)
     │── PostgreSQL applies RLS policy:
@@ -834,236 +787,227 @@ Query: db.select().from(leads)
     │               )
     │           )
     │       )
-    │── Sub‑account user (isAgencyAdmin=false) → only rows with tenant_id = sub‑account ID
-    │── Agency admin (isAgencyAdmin=true) → rows from agency own tenant + all sub‑accounts
-    │── Sibling sub‑accounts invisible to each other
+    │── Sub-account user: sees only rows with tenant_id = own sub-account ID
+    │── Agency admin: sees rows from own agency + all child sub-accounts
+    │── Sibling sub-accounts: completely invisible to each other
     ▼
-Multi‑step transaction:
-    │── INSERT leads ... (tenant_id set by app)
-    │── INSERT outbox_events ... (tenant_id from context)
-    │── Writes restricted to current tenant (agency‑admin flag = read‑only for RLS)
+Multi-step transaction:
+    │── INSERT leads (tenant_id set by application before insert)
+    │── INSERT outbox_events (tenant_id from context)
+    │── Writes: still guarded at application level; agency-admin flag = read-only for RLS
     ▼
-Cleanup: firm‑db‑client PgBouncer‑safe RESET wrapper
+Cleanup: PgBouncer-safe RESET wrapper (firm-db-client)
     │── RESET app.current_tenant_id; RESET app.current_agency_admin
-    │── Ensures connection pool eviction does not leak tenant context to next request
-    │── (Addresses the highest‑severity vulnerability documented in the platform security review)
+    │── Prevents SET LOCAL from leaking to the next request on connection-pool eviction
+    │── (The highest-severity vulnerability in the platform security review; addressed here)
 ```
 
-**Demonstrates:** Three‑tier hierarchy in RLS, sibling isolation, parent visibility with zero app‑code changes beyond `setTenantContext()`. Write operations still guarded at application level. **The PgBouncer‑safe RESET wrapper** in `firm‑db‑client` prevents the cross‑tenant data‑leak vulnerability on connection pool eviction — the most critical security mechanism in the data access layer.
-
 ---
 
-## Section 6: Design Principles & Shared Vocabulary
+## §6 Design Principles & Shared Vocabulary
 
-Glossary of platform‑specific terms + recurring architectural patterns.
+### 6.1 Glossary
 
----
+- **API Gateway** — Edge component (Cloudflare / NGINX / Kong) applying rate limiting, WAF, and DDoS protection before traffic reaches the application. Named rate-limit policies mirrored from `firm-rate-limiter`.
 
-### 6.1 Glossary of Platform Terms
+- **Audit Trail** — Append-only, cryptographically chained record in `firm-audit`. Each record includes a hash of the prior record — tamper-detectable. Required for SOC 2 CC6.2.
 
-- **API Gateway**: Edge component (Cloudflare/NGINX/Kong) applying rate limiting, WAF, DDoS protection before traffic reaches app. Named policies mirrored from `firm‑rate‑limiter`.
+- **Branded ID** — TypeScript string tagged with a unique symbol (`TenantId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`, `UserId`). Compile-time incompatibility prevents ID mix-ups across the three-tier hierarchy. Runtime gatekeeper (`asTenantId(uuid)`) validates UUID format. Defined in `firm-primitives`. ESLint bans raw `as TenantId`.
 
-- **Audit Trail**: Append‑only, cryptographically chained record of significant business operations (`firm‑audit`). Each record includes hash of previous – tamper‑detectable. Required for SOC 2.
+- **C2PA Manifest** — Coalition for Content Provenance and Authenticity manifest. Required by EU AI Act Art. 50 (deadline Aug 2). Stores: content hash, generation timestamp, model identifier, prompt hash (not the full prompt), and an AI-training-data assertion. Stored in `ai_generation_log.c2pa_manifest`. Generated by `firm-security`, attached by `firm-ai-content`.
 
-- **Branded ID**: TypeScript string tagged with unique symbol (`TenantId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`, `UserId`). Compile‑time incompatibility prevents ID mix‑ups across the three‑tier hierarchy. Runtime gatekeeper (`asTenantId(uuid)`) validates UUID. Defined in `firm‑primitives`. ESLint bans raw `as TenantId`.
+- **Chaos Engineering** — Controlled failure injection (Toxiproxy) to verify resilience guarantees. Scenarios: Redis down, outbox worker crash, PgBouncer eviction, adapter timeout. PgBouncer eviction scenario must pass before any EU client is onboarded.
 
-- **C2PA Manifest**: Coalition for Content Provenance and Authenticity manifest. Required under EU AI Act Art. 50 for AI‑generated content. Stores content hash, generation timestamp, model identifier, prompt hash (not the full prompt), and an AI‑training‑data assertion in `ai_generation_log.c2pa_manifest`. Generated by `firm‑security`, attached by `firm‑ai‑content`.
+- **`checkQuota`** — Primary API of `firm-metering`. `checkQuota(tenantId, dimension, amount)` performs pre-operation enforcement and rejects if quota exceeded. CI static analysis requires it before every metered operation.
 
-- **Chaos Engineering**: Controlled failure injection to verify resilience guarantees. The platform uses Toxiproxy for network‑level faults (Redis down, outbox worker crash, PgBouncer eviction). Required to prove the “no event ever lost” and “tenant isolation holds under failure” commitments.
+- **Constant-Time Comparison** — Comparison taking equal time regardless of input differences, preventing timing attacks. Used for: HMAC, API keys, CSRF tokens, webhook signatures, consent cookies. Uses `crypto.timingSafeEqual`.
 
-- **`checkQuota`**: The primary API of `firm‑metering` (`checkQuota(tenantId, dimension, amount)`). Performs pre‑operation quota enforcement; rejects operations before they consume resources. CI static analysis requires it before every metered operation.
+- **CQRS Read Model** — Separate denormalised schema (`firm-db-read`) for `firm-reporting`. Populated exclusively by `firm-bus` outbox event handlers. ESLint rule blocks direct writes from any other package.
 
-- **Constant‑Time Comparison**: Comparison that takes same time regardless of input differences. Prevents timing attacks. Used for HMAC, API keys, CSRF tokens, webhook signatures, consent cookies. `crypto.timingSafeEqual`.
+- **Data Residency** — Infrastructure-enforced requirement that tenant data is stored only in the designated region (GDPR Art. 32). `infra/` is organised into regional subdirectories (`us-east-1/`, `eu-west-1/`). `firm-compliance` runs an application-level assertion verifying no cross-region writes occurred.
 
-- **CQRS Read‑Model**: Separate denormalised read‑optimised schema (`firm‑db‑read`) for `firm‑reporting`. Populated exclusively by outbox event handlers. Never accepts direct writes from feature packages (enforced by ESLint). Prevents analytical load impacting transaction performance.
+- **Design Token (DTCG)** — W3C Design Tokens Community Group JSON format. Single source of visual truth in `firm-tokens` → CSS custom properties + TypeScript constants. No hardcoded visual values in any component.
 
-- **Data Residency**: Infrastructure‑enforced requirement that a tenant’s data is stored only in their designated region (GDPR Art. 32). `infra/` is organised into regional subdirectories (`us‑east‑1/`, `eu‑west‑1/`). `firm‑compliance` runs an application‑level assertion verifying that no cross‑region writes occurred.
+- **Digest Batching** — Grouping related notifications within a configurable time window into a single delivery. Prevents a bulk operation (e.g., importing 500 leads) from triggering 500 individual email/SMS alerts.
 
-- **Design Token (DTCG)**: W3C Design Tokens Community Group JSON format for colours, spacing, typography, etc. Source of truth in `firm‑tokens` → generated CSS custom properties + TypeScript constants. No hardcoded visual values.
+- **Dry-Run Mode** — Simulation without side effects. Used in `firm-provisioning` (validate before committing), `firm-rate-limiter` (record without blocking), and `firm-compliance` (validate erasure saga before execution).
 
-- **Digest Batching**: Grouping related notifications within a configurable time window into a single delivery. Prevents a bulk operation (e.g., importing 500 leads) from triggering 500 individual email/SMS alerts.
+- **Event Versioning** — Every event carries a mandatory `version` field. Handler declares `acceptsVersions`. CI ensures each emitted version has a handler. Breaking changes require a new version; old handlers continue receiving old versions.
 
-- **Dry‑Run Mode**: Simulation without side effects. Used in `firm‑provisioning` (validate tenant creation before committing), `firm‑rate‑limiter` (record would‑be‑rate‑limited events without blocking), and `firm‑compliance` (validate erasure saga before execution).
+- **Global Privacy Control (GPC)** — Browser signal `Sec-GPC: 1`. Platform treats as a binding directive: overrides the consent cookie, forces `analytics=false, marketing=false`. The consent banner cannot override GPC. The `gpcApplied` flag is embedded in the signed consent cookie.
 
-- **Event Versioning**: Every event carries `version` field. Handler declares `acceptsVersions` range. CI ensures each emitted version has handler. Breaking changes = new version; old handlers continue receiving old versions.
+- **Grace Period** — Brief continued-access window (3–7 days) after payment failure before hard subscription revocation. Managed by `firm-subscriptions`.
 
-- **Global Privacy Control (GPC)**: Browser signal `Sec‑GPC: 1` indicating user does not want data sold/shared. Platform treats as binding directive: overrides consent cookie, forces `analytics=false, marketing=false`. Banner cannot override. The `gpcApplied` flag is embedded in the signed consent cookie for audit.
+- **Human-Approval Gate** — Platform constraint (not a temporary flag) requiring explicit human review before certain content or actions proceed. Output produced as `pending_approval`. Only `approveContent()` guarded by `content:approve` RBAC permission sets `approved`. No `autoApprove` flag exists.
 
-- **Grace Period**: Brief continued access window (3–7 days) after payment failure before hard subscription revocation. Managed by `firm‑subscriptions` to prevent immediate lockout from a failed card payment.
+- **Idempotency Key** — Unique identifier enabling safe retry. Receiver stores key + first result; duplicate arrivals return stored result without repeating side effects. Used in: payments, email, webhooks, outbox events. Financial webhooks use PostgreSQL store; others use Redis.
 
-- **Idempotency Key**: Unique identifier enabling safe retry. Receiver stores key + first result; duplicate arrivals return stored result without repeating side effect. Used in payments, email, webhooks, outbox events.
+- **Metering** — Recording resource consumption per tenant per billing period. `firm-metering` aggregates in Redis → periodic flush to DB. Used by quota enforcement (`firm-subscriptions`) and invoicing (`firm-billing`).
 
-- **Metering**: Recording resource consumption per tenant per billing period (leads, emails, AI tokens, storage, API calls). `firm‑metering` aggregates in Redis → periodic flush to DB. Used by quotas (`firm‑subscriptions`) and invoicing (`firm‑billing`).
+- **Nonce-Based CSP** — Unique cryptographic nonce per request injected into the CSP header and every `<script>` tag. Browser executes only scripts with a matching nonce. `unsafe-inline` and `unsafe-eval` are never permitted.
 
-- **Nonce‑Based CSP**: Unique cryptographic nonce per request injected into CSP header and every `<script>` tag. Browser executes only scripts with matching nonce. Dynamic pages use nonce; static pages use pre‑computed hashes.
+- **Outbox Pattern** — Event inserted into `outbox_events` within the same DB transaction as the data change. Worker reads and dispatches. Guarantees atomicity and at-least-once delivery. Saga state schema (`saga_instances`) is defined in `firm-db-schema` at Layer 2.
 
-- **Outbox Pattern**: Reliability strategy: event inserted into `outbox_events` within same DB transaction as data change. Worker (`firm‑bus`) reads and dispatches. Guarantees atomicity + at‑least‑once delivery. Saga state schema (`saga_instances`) is defined in `firm‑db‑schema` at Layer 2, not implicitly in the Layer 6 implementation — keeping the saga contract schema‑governed.
+- **Port & Adapter (Hexagonal Architecture)** — Port = typed interface in `firm-ports` (canonical contract). Adapter = Layer 7 package implementing that interface for a specific provider. Feature packages depend only on the Port, never the adapter.
 
-- **Port & Adapter (Hexagonal Architecture)**: **Port** = interface in `firm‑types` (canonical contract). **Adapter** = Layer 7 package implementing that interface for specific provider. Feature packages depend only on Port.
+- **Result Type** — `Result<T, E>` = `Ok(value)` or `Err(error)`. Expected failures return `Err`; caller must handle. Unexpected failures throw exceptions. From `firm-utils`.
 
-- **Result Type**: `Result<T, E>` = `Ok(value)` or `Err(error)`. Expected failures return `Err`; caller must handle. Unexpected failures throw exceptions.
+- **Row-Level Security (RLS)** — PostgreSQL feature auto-filtering rows by security policy. Platform uses it for tenant isolation and parent-child hierarchy enforcement. Applied at migration time, verified by health probes on every deployment.
 
-- **Row‑Level Security (RLS)**: PostgreSQL feature auto‑filtering rows by security policy. Platform uses for tenant isolation + parent‑child hierarchy. Applied at migration time, verified by health probes.
+- **Saga** — Long-running workflow with compensable steps. If a step fails, compensation steps run in reverse order. Executed by `firm-bus`; state persisted in `saga_instances` (defined in `firm-db-schema`).
 
-- **Saga**: Long‑running workflow with compensable steps. If step fails, compensation steps run in reverse. Executed by `firm‑bus` with durable state persisted in `saga_instances` (defined in `firm‑db‑schema`).
+- **SCIM** (System for Cross-domain Identity Management) — RFC 7643/7644 for automated enterprise user provisioning. Implemented via `adapters-scim-okta` and `adapters-scim-azure-ad`, orchestrated by `firm-auth`.
 
-- **SCIM** (System for Cross‑domain Identity Management): RFC 7643/7644 for automated user provisioning. Enterprise Okta/Azure AD integration via Layer 7 `firm‑adapter‑scim‑okta` and `firm‑adapter‑scim‑azure‑ad`, orchestrated by `firm‑auth`.
+- **SLO** (Service Level Objective) — Specific measurable reliability target (e.g., API p95 latency < 500ms, outbox processing lag < 60s). Defined in `docs/slos/`. Each SLO has a corresponding Grafana alert and runbook in `docs/runbooks/`.
 
-- **SLO (Service Level Objective)**: Specific measurable target for reliability, latency, or correctness (e.g., API p95 latency < 500ms, outbox processing lag < 60s). Defined in `docs/slos/`. Each SLO has a corresponding Grafana alert and runbook.
+- **Sub-Account** — End-client of an agency in the three-tier hierarchy. Inherits branding/billing from its parent agency. Sibling sub-accounts are strictly isolated via `parent_tenant_id` and RLS.
 
-- **Sub‑Account**: End‑client of an agency in three‑tier hierarchy (Platform → Agency → Sub‑Account). Inherits branding/billing from parent agency. Sibling sub‑accounts strictly isolated. Modeled via `parent_tenant_id` and `tenant_type` in `tenants` table.
+- **Supply-Chain Integrity** — Automated checks: `npm audit` (block high/critical CVEs), license scanner (reject GPL for SaaS use), SRI hashes for all browser-injected scripts, `minimumReleaseAge=1440` (24-hour new-package block), `blockExoticSubdeps=true`.
 
-- **Supply‑Chain Integrity**: Automated checks: `npm audit` (block high/critical CVEs), license scanner (reject GPL for SaaS), SRI hashes for browser scripts. Enforced in CI.
-
-- **TCF 2.2**: IAB Europe’s Transparency & Consent Framework v2.2. Required for programmatic ad platforms (DV360, Google Ads for EU) to serve personalised ads. Encoded by `firm‑consent` as the `tcf_string` consent signal.
+- **TCF 2.2** — IAB Europe Transparency & Consent Framework v2.2. Required for EU programmatic advertising (DV360, Google Ads). Encoded by `firm-consent` as the `tcf_string` consent signal.
 
 ---
 
 ### 6.2 Recurring Architectural Patterns
 
-**Pattern: Result for Expected Failures**  
-- *Problem*: Functions fail predictably (validation, missing records). Returning `null` or throwing creates ambiguity.  
-- *Solution*: Return `Result<T, E>`. TypeScript enforces handling.  
-- *When*: Expected, documentable failures. Not for programmer errors or infrastructure failures.  
-- *Example*: Lead validation → `Result<Lead, ValidationError>`; API handler checks result → 201 or 400.
+**Result for Expected Failures**
+- Problem: Functions fail predictably (validation, missing records). Returning `null` or throwing creates ambiguity for callers.
+- Solution: Return `Result<T, E>`. TypeScript enforces handling of both branches.
+- When: Any expected, documentable failure. Not for programmer errors or infrastructure failures.
+- Example: Lead validation → `Result<Lead, ValidationError>`; handler maps to 201 or 400.
 
-**Pattern: Decorator for Auth**  
-- *Problem*: Direct coupling to third‑party auth library (Better Auth) makes migration expensive.  
-- *Solution*: `firm‑auth` wraps Better Auth, exposes platform‑specific constructs (frozen `SessionContext`, RBAC, MFA, audit). Feature packages depend only on `firm‑auth`.  
-- *When*: Any third‑party service that may be replaced.  
-- *Example*: Replacing Better Auth → only `firm‑auth` changes.
+**Decorator for Auth**
+- Problem: Direct coupling to Better Auth makes migration expensive.
+- Solution: `firm-auth` wraps Better Auth and exposes platform-specific constructs (frozen `SessionContext`, RBAC, MFA, audit). Feature packages depend only on `firm-auth`.
+- When: Any third-party service that may eventually be replaced.
+- Example: Replacing Better Auth → only `firm-auth` changes. No feature package is touched.
 
-**Pattern: Event Registry as Single Source of Truth**  
-- *Problem*: Producers and consumers define events independently → drift → runtime mismatches.  
-- *Solution*: Central `EventRegistry` in `firm‑api‑contracts`. `defineEvent()` registers; workers import same definition. No raw emission.  
-- *When*: Any event emitted by one package and consumed by another.  
-- *Example*: `firm‑funnels` defines `funnel.step_completed` via `defineEvent()`; `firm‑reporting` imports same definition to listen.
+**Event Registry as Single Source of Truth**
+- Problem: Producers and consumers define events independently → drift → runtime mismatches.
+- Solution: Central `EventRegistry`. `defineEvent()` registers; workers import the same definition. No raw event emission.
+- When: Any event emitted by one package and consumed by another.
+- Example: `firm-funnels` defines `funnel.step_completed`; `firm-reporting` imports the same definition to subscribe.
 
-**Pattern: Lazy Initialisation from Environment Variables**  
-- *Problem*: Hardcoding secrets unsafe; loading at module import breaks testing and optional integrations.  
-- *Solution*: Client created on first use from `firm‑env` validated variables. Constructor reads `process.env` through env validation.  
-- *When*: Every Layer 7 adapter + optional Layer 6 service integrations.  
-- *Example*: Stripe adapter creates client only on first `createCheckoutSession()` call, reading `STRIPE_SECRET_KEY`.
+**Lazy Initialisation from Environment Variables**
+- Problem: Hardcoding secrets is unsafe; loading at module import breaks tests and optional integrations.
+- Solution: Client created on first call, reading from `firm-env` validated variables.
+- When: Every Layer 7 adapter and optional Layer 6 service integration.
+- Example: Stripe adapter creates its client only on the first `createCheckoutSession()` call.
 
-**Pattern: Webhook Verify‑Then‑Deduplicate‑Then‑Process**  
-- *Problem*: Inbound webhooks need signature verification, idempotency, then logic. Wrong order creates vulnerabilities.  
-- *Solution*: Fixed three‑step sequence (mandatory):  
-  1. **Verify** – HMAC signature of raw body (constant‑time). Fail → 401.  
-  2. **Deduplicate** – check idempotency key (provider event ID). Already processed → return 200.  
-  3. **Process** – business logic, emit platform outbox event.  
-- *When*: Every adapter webhook handler.  
-- *Example*: Stripe `checkout.session.completed`: verify signature → idempotency on event ID → update invoice, emit `invoice.paid`.
+**Webhook Verify-Then-Deduplicate-Then-Process**
+- Problem: Inbound webhooks need signature verification, idempotency, then business logic. Wrong order creates vulnerabilities.
+- Solution: Fixed three-step sequence (mandatory for every adapter webhook handler):
+  1. **Verify** — HMAC signature of raw body (constant-time). Fail → 401.
+  2. **Deduplicate** — check idempotency key (provider event ID). Already processed → 200, no action.
+  3. **Process** — business logic, emit platform outbox event.
+- Example: Stripe `checkout.session.completed` → verify signature → idempotency on `event.id` → update invoice → emit `invoice.paid`.
 
-**Pattern: Metering Pattern**  
-- *Problem*: Tracking resource usage for quotas/billing without adding latency to hot path, and without allowing operations to proceed beyond plan limits.  
-- *Solution*: `checkQuota()` is called before any chargeable operation → rejects if quota exceeded. Successful operations place a meter event in the transactional outbox alongside business data. Aggregation worker increments Redis counters, periodically flushes to DB.  
-- *When*: Any resource dimension with quota or billable.  
-- *Example*: `firm‑ai‑content` calls `checkQuota(tenantId, 'ai_tokens', estimatedTokens)` → rejected if exceeded. On success, emits `ai.token.consumed` meter event; `firm‑metering` increments tenant’s monthly AI‑token counter.
+**Metering Pattern**
+- Problem: Tracking resource usage for quotas and billing without adding latency to the hot path, while preventing operations from exceeding plan limits.
+- Solution: `checkQuota()` called before any chargeable operation. Successful operations emit a meter event in the transactional outbox. Aggregation worker increments Redis counters; periodic flush to DB.
+- Example: `firm-ai-content` calls `checkQuota(tenantId, 'ai_tokens', estimatedTokens)` → rejected if quota exceeded → on success, emits `ai.token.consumed` → `firm-metering` increments the monthly counter.
 
-**Pattern: Two‑Phase GDPR Erasure (in `firm‑compliance`)**  
-- *Problem*: Immediate hard‑delete risks irreversible mistakes; delayed deletion risks non‑compliance with “without undue delay”.  
-- *Solution*:  
-  - **Phase 1 (immediate)** : Anonymise all PII in DB (names, emails, phones, addresses, IPs) → satisfies prompt action.  
-  - **Phase 2 (after retention window, e.g., 30 days)** : Hard delete all records.  
-- *When*: Any data deletion subject to privacy regulations.  
-- *Example*: `firm‑compliance.eraseDataSubject(subjectId)` triggers saga: immediate anonymisation → export generation → retention clock → hard deletion → confirmation.
+**Two-Phase GDPR Erasure**
+- Problem: Immediate hard-delete risks irreversible mistakes; delay risks non-compliance with "without undue delay" (GDPR Art. 17).
+- Solution:
+  - Phase 1 (immediate): Anonymise all PII in DB (names, emails, phones, IPs) — satisfies prompt action obligation.
+  - Phase 2 (after retention window, e.g. 30 days): Hard-delete all records.
+- Example: `firm-compliance.eraseDataSubject(subjectId)` triggers saga: immediate anonymisation → export generation → retention clock → hard deletion → confirmation record.
 
-**Pattern: Human‑Approval Gate**  
-- *Problem*: Certain operations (AI content, bulk emails, landing page publish, ad campaigns) must never execute without explicit human review.  
-- *Solution*: Output produced as `pending_approval`. Only path to `approved` is explicit `approve()` function guarded by RBAC permission + audit log write. No `autoApprove` flag, no bypass.  
-- *When*: AI content generation, sending bulk emails, publishing landing pages, approving ad campaigns, signing contracts.  
-- *Example*: `firm‑ai‑content` content endpoint returns `status:'pending_approval'`. Reviewer calls `approveContent()` with `requirePermission('content:approve')` → audit record → status `approved`. Only approved content rendered or sent.
+**Human-Approval Gate**
+- Problem: AI content, bulk emails, and ad campaigns must never publish without explicit human review.
+- Solution: Output produced as `pending_approval`. The only path to `approved` is an explicit `approveContent()` call guarded by RBAC permission `content:approve` + audit log write. No `autoApprove` flag. No bypass.
+- Example: `firm-ai-content` returns `{ status: 'pending_approval' }`. Reviewer calls `approveContent(contentId)` with the `content:approve` permission → audit record written → status set to `approved`. Only approved content is rendered or sent.
 
 ---
 
-## Section 7: AI Agent Onboarding Instructions
-
-Designed for AI coding agents at session start – provides repository structure, rules, and references without re‑reading entire Blueprint.
-
----
+## §7 AI Agent Onboarding
 
 ### 7.1 Repository Overview (for AI context window)
 
-Monorepo with strict layers (0‑7). Layer 0 = config & constraints (`firm‑primitives` – branded IDs for three‑tier hierarchy: `TenantId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`, `UserId`). Layer 1 = core utilities. Layer 2 = data & contracts (`firm‑types` domain interfaces, `firm‑db‑schema` Drizzle schemas, `firm‑db‑client` runtime connections, `firm‑sdk`). Layer 3 = identity, security, consent, rate limiting (`firm‑rate‑limiter` is separate). Layer 4 = observability & health. Layer 5 = UI & theming (`firm‑ui`, `firm‑theme‑provider`, `firm‑testing`). Layer 6 = feature packages & workers (Tiers A‑D; `firm‑ai` infrastructure + `firm‑ai‑content` generation split; `firm‑sales‑pipeline` renamed). Layer 7 = adapters (105 total, sole external bridge).
+Monorepo. Strict layers 0–7. Layer 0 = config + constraints (`firm-primitives`: branded IDs `TenantId`, `AgencyId`, `SubAccountId`, `PlatformId`, `SessionId`, `UserId`). Layer 1 = core utilities. Layer 2 = data + contracts (`firm-types`, `firm-db-schema`, `firm-db-client`, `firm-sdk`, `firm-ports`). Layer 3 = identity, security, consent (`firm-auth`, `firm-rate-limiter`, `firm-consent`, `firm-security`, `firm-policy`). Layer 4 = observability + health. Layer 5 = UI + theming + testing. Layer 6 = feature packages + workers (Tiers A–D; `firm-ai` infrastructure + `firm-ai-content` generation; `firm-sales-pipeline`). Layer 7 = adapters (105, sole external bridge).
 
-**Three‑tier tenant hierarchy:** Platform → Agency → Sub‑Account. RLS enforces sibling isolation & parent visibility.
+Three-tier tenant hierarchy: Platform → Agency → Sub-Account. RLS enforces sibling isolation + parent visibility.
 
-**Critical directories:** `packages/` (layer0‑config, layer1‑core, layer2‑data, layer3‑security, layer4‑observability, layer5‑ui, layer6‑features, layer7‑adapters), `apps/`, `workers/` (background job handlers – renamed from `services/`), `infra/` (regional subdirectories for data residency), `docs/adr/`, `docs/slos/`, `docs/compliance/`, `e2e/`, `load‑tests/` (k6 scenarios), `chaos/` (Toxiproxy scenarios), `scripts/`, `local‑dev/`.
-
-**Rules:** No layer‑up imports. Feature packages must not call `fetch()` directly. Only `firm‑bus` event handlers may write to the CQRS read model. Each package has `exports` field = public API. Enforced by ESLint + `dep‑fence`.
+Critical directories: `packages/` (layer0–layer7), `apps/`, `workers/` (renamed from `services/`), `infra/` (regional subdirectories), `docs/adr/`, `docs/slos/`, `docs/runbooks/`, `docs/compliance/`, `e2e/`, `load-tests/`, `chaos/`, `contracts/v1/`, `tools/catalog/`.
 
 ---
 
 ### 7.2 When Asked to Build a New Package
 
-1. **Identify layer** (Section 2). Confirm dependencies only from lower layers.
-2. **Check `exports`** of dependencies – import only public API.
-3. **Define DB tables** in `firm‑db‑schema`. Tenant‑scoped? Include RLS policies (default + parent‑agency visibility) + sibling/parent isolation tests in same PR.
-4. **Register events** in `firm‑api‑contracts` via `defineEvent()` with mandatory `version`. Ensure handler `acceptsVersions` covers it.
-5. **Use `firm‑validators`** – every Zod schema must `satisfy` corresponding `firm‑types` interface.
-6. **Use `Result` type** (`firm‑utils`) for expected failures.
-7. **Use `firm‑logger`** – `console.log` banned.
-8. **Write tests** – ≥80% coverage.
-9. **If Layer 7 adapter:** generate via `pnpm turbo gen adapter` (hand‑authored adapters fail CI). Must implement Port interface, lazy init from `firm‑env`, transform functions, error mapping, metrics, webhook verify‑deduplicate‑process. Simultaneous stub + conformance test generated.
-10. **If generating content (AI, documents, emails):** enforce Human‑Approval Gate – output `pending_approval`, only `approveContent()` with `content:approve` permission sets `approved`, C2PA manifest stored. No bypass.
-11. **If metered operation:** call `firm‑metering.checkQuota()` *before* executing the chargeable action. CI static analysis enforces this.
+1. **Identify layer** (§2). Confirm all dependencies are from the same or lower layers.
+2. **Check `exports`** of dependencies — import only the public API.
+3. **Define DB tables** in `firm-db-schema`. If tenant-scoped: include RLS policies (default + parent-agency) and isolation tests in the same PR.
+4. **Register events** via `defineEvent()` in `firm-events` with mandatory `version`. Ensure handler `acceptsVersions` covers every emitted version.
+5. **Use `firm-validators`** — Zod schemas derived from Drizzle tables via `drizzle-zod`; add only `.refine()` business rules. Schema must `satisfy` the corresponding `firm-types` interface.
+6. **Use `Result<T, E>`** (`firm-utils`) for expected failures. Never throw for predictable errors.
+7. **Use `firm-logger`** only. `console.log` is banned.
+8. **Write tests** — ≥80% coverage (line/function/branch/statement).
+9. **If Layer 7 adapter:** generate via `pnpm turbo gen adapter`. Hand-authored adapters fail CI. Must: `implements <Port>`, lazy-init from `firm-env`, transform functions, error mapping to `FirmError`, Prometheus metrics, webhook `verify → deduplicate → process`. Simultaneous stub + conformance test required.
+10. **If generating content (AI, documents, emails):** enforce Human-Approval Gate. Output `pending_approval`. Only `approveContent()` with `content:approve` permission sets `approved`. C2PA manifest stored. No bypass.
+11. **If metered operation:** call `firm-metering.checkQuota()` *before* the chargeable action. CI static analysis enforces this. Test must verify `QuotaExceeded` is returned before the operation executes.
 
 ---
 
 ### 7.3 When Asked to Fix a Bug
 
-1. **Consult Current State Assessment** – lists known bugs with file locations & required fixes.
-2. **Examine test coverage** – if missing tests, add them alongside fix.
-3. **Ensure no layer boundary violations** – no new upward imports, no `fetch()` in feature packages, no direct write to read model.
-4. **Run CI locally** – boundary check, type check, lint, tests – before commit.
+1. **Consult the Critique** — lists known bugs with file locations and required fixes (Phase 1 Fix Sequence, §3.2 of Critique).
+2. **Examine test coverage** — add tests alongside the fix if coverage is missing.
+3. **Verify no layer violations** — no new upward imports, no `fetch()` in feature packages, no direct write to read model.
+4. **Run CI locally** — boundary check, type check, lint, tests — before committing.
 
 ---
 
-### 7.4 Key Files to Review for Context
+### 7.4 Key Files
 
-Layer definitions: `packages/layer0‑config/firm‑config‑eslint/src/presets/boundaries.ts`  
-Branded IDs: `packages/layer0‑config/firm‑primitives/src/ids.ts`  
-Domain entities: `packages/layer2‑data/firm‑types/src/entities.ts`  
-Event Registry: `packages/layer2‑data/firm‑api‑contracts/src/events/registry.ts`  
-Session types: `packages/layer3‑security/firm‑auth/src/session/types.ts`  
-Permission matrix (three‑tier): `packages/layer3‑security/firm‑auth/src/permissions/matrix.ts`  
-Rate limit policies: `packages/layer3‑security/firm‑rate‑limiter/src/policies.ts`  
-DB schemas: `packages/layer2‑data/firm‑db‑schema/src/schemas/*.ts`  
-DB client: `packages/layer2‑data/firm‑db‑client/src/client.ts`  
-RLS policies: `packages/layer2‑data/firm‑db‑schema/src/rls‑policies.ts`  
-Request context: `packages/layer1‑core/firm‑request‑context/src/store.ts`  
-Logger: `packages/layer1‑core/firm‑logger/src/logger.ts`  
-Validation fields: `packages/layer2‑data/firm‑validators/src/common.ts`  
-Tag Registry: `packages/layer3‑security/firm‑security/src/tags/registry.ts`  
-Feature flags: `packages/layer6‑features/firm‑flags/src/flags.ts`  
-Audit log: `packages/layer6‑features/firm‑audit/src/audit.ts`  
-Metering: `packages/layer6‑features/firm‑metering/src/meter.ts`  
-ADRs: `docs/adr/`  
-SLOs: `docs/slos/`  
-Compliance: `docs/compliance/data‑residency.md`  
-Boundary enforcement: `scripts/ci/dep‑fence.ts`  
-Event version check: `scripts/ci/event‑version‑check.ts`
+| File | Purpose |
+|------|---------|
+| `packages/layer0-config/firm-config-eslint/src/presets/boundaries.ts` | Layer boundary rules |
+| `packages/layer0-config/firm-primitives/src/ids.ts` | Branded IDs + gatekeepers |
+| `packages/layer2-data/firm-types/src/entities.ts` | Domain entity interfaces |
+| `packages/layer2-data/firm-events/src/registry.ts` | Event Registry |
+| `packages/layer2-data/firm-ports/src/index.ts` | All 22+ Port interfaces |
+| `packages/layer3-security/firm-auth/src/session/types.ts` | SessionContext shape |
+| `packages/layer3-security/firm-auth/src/permissions/matrix.ts` | RBAC matrix (three-tier) |
+| `packages/layer3-security/firm-rate-limiter/src/policies.ts` | Named rate-limit policies |
+| `packages/layer2-data/firm-db-schema/src/schemas/*.ts` | Drizzle table definitions |
+| `packages/layer2-data/firm-db-client/src/client.ts` | Connection factories + RESET wrapper |
+| `packages/layer2-data/firm-db-schema/src/rls-policies.ts` | RLS policy generators |
+| `packages/layer1-core/firm-request-context/src/store.ts` | AsyncLocalStorage store |
+| `packages/layer1-core/firm-logger/src/logger.ts` | Pino logger + redaction |
+| `packages/layer2-data/firm-validators/src/common.ts` | Zod validation schemas |
+| `packages/layer3-security/firm-security/src/tags/registry.ts` | Third-party tag registry |
+| `packages/layer6-features/firm-flags/src/flags.ts` | Feature flag definitions |
+| `packages/layer6-features/firm-audit/src/audit.ts` | Audit log writer |
+| `packages/layer6-features/firm-metering/src/meter.ts` | `checkQuota` + `recordUsage` |
+| `packages/layer7-adapters/REGISTRY.md` | Auto-generated adapter registry |
+| `docs/adr/` | All architectural decision records |
+| `docs/slos/` | Six SLO definitions |
+| `docs/compliance/data-residency.md` | Data residency policy |
+| `scripts/ci/dep-fence.ts` | Dependency boundary enforcement |
+| `scripts/ci/event-version-check.ts` | Event versioning CI gate |
+| `contracts/v1/` | Committed OpenAPI, AsyncAPI, JSON Schema artifacts |
 
 ---
 
-### 7.5 Anti‑Patterns to Avoid
+### 7.5 Anti-Patterns to Avoid
 
-- Importing from internal paths (not `exports` field).
-- Using `as TenantId` instead of `asTenantId(uuid)` gatekeeper.
-- Hardcoding rate limit values – reference named policy in `firm‑rate‑limiter`.
-- Emitting unregistered event or version without handler.
-- Manual tenant ID in SQL – use `setTenantContext()`.
-- Calling `fetch()` or any third‑party SDK directly from a feature package – use Layer 7 adapter.
-- Writing directly to the CQRS read model – only `firm‑bus` event handlers are permitted.
-- `console.log` – use `firm‑logger`.
-- Adding tenant‑scoped table without RLS policies + tests.
-- Processing webhook before signature verification or idempotency.
+- Importing from internal paths not listed in the `exports` field.
+- Using `as TenantId` instead of the `asTenantId(uuid)` gatekeeper.
+- Hardcoding rate-limit values — reference a named policy from `firm-rate-limiter`.
+- Emitting an unregistered event version or one without a handler.
+- Manually inserting `tenant_id` in SQL — use `withTenantContext()`.
+- Calling `fetch()` or any third-party SDK directly from a feature package — use a Layer 7 adapter.
+- Writing directly to the CQRS read model from a feature package — only `firm-bus` event handlers are permitted.
+- Using `console.log` — use `firm-logger`.
+- Adding a tenant-scoped table without RLS policies and isolation tests in the same PR.
+- Processing a webhook before signature verification and idempotency check.
 - Performing a metered operation without a preceding `checkQuota()` call.
-- Hand‑authoring an adapter – always use the scaffolding generator.
-- Importing `@firm/tokens` at runtime – tokens are build‑time only; use CSS custom properties.
-- Marking AI‑generated content as `approved` without explicit human‑review gate.
-- Modifying `infra/` unless explicitly requested.
+- Hand-authoring an adapter — always use the scaffolding generator.
+- Importing `@firm/tokens` at runtime — tokens are build-time only; use CSS custom properties.
+- Setting AI-generated content to `approved` without an explicit human-review gate.
+- Modifying `infra/` unless the task explicitly requires it.
+- Using a temporary feature flag without an `expiresAt` date.
+- Using `as TenantId` anywhere in the codebase (lint error) — only gatekeepers allowed.
 
----
-
-*Document End*
+*End of Document.*
