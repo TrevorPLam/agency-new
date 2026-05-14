@@ -48,6 +48,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         
+      - name: Check for legacy services/ references
+        run: |
+          if grep -RIn --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=docs/archive 'services/' .; then
+            echo 'Found legacy services/ references' >&2
+            exit 1
+          fi
+
       - name: Turbo cache
         uses: actions/cache@v3
         with:
