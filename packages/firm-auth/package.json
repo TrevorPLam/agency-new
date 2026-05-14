@@ -34,6 +34,7 @@
     "otplib": "^12.0.1",
     "argon2": "^0.41.0",
     "drizzle-orm": "^0.30.0",
+    "@firm/primitives": "workspace:*",
     "@firm/types": "workspace:*",
     "@firm/db": "workspace:*",
     "@firm/cache": "workspace:*",

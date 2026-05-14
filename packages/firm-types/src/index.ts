@@ -10,6 +10,33 @@
  * - Helper utilities and transformation types
  */
 
+// Re-export primitive types and functions
+export type {
+  TenantId,
+  AgencyId,
+  SubAccountId,
+  PlatformId,
+  SessionId,
+  UserId,
+  PrimitiveId,
+} from '@firm/primitives';
+
+export {
+  asTenantId,
+  asAgencyId,
+  asSubAccountId,
+  asPlatformId,
+  asSessionId,
+  asUserId,
+  isTenantId,
+  isAgencyId,
+  isSubAccountId,
+  isPlatformId,
+  isSessionId,
+  isUserId,
+  extractId,
+} from '@firm/primitives';
+
 // Export all branded types
 export * from './branded';
 

@@ -5,4 +5,5 @@ export {
   createSharedLibraryConfig,
   createAppConfig,
   createServiceConfig,
+  createWorkerConfig,
 } from './config-factory';

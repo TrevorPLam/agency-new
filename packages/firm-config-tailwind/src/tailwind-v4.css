@@ -1,0 +1,25 @@
+/* Tailwind CSS v4 CSS-first configuration
+ * This file exports Tailwind v4 CSS-first preset with modern CSS features.
+ * Use this for projects utilizing Tailwind's CSS-first approach introduced in v4.
+ */
+
+@import 'tailwindcss';
+@layer theme {
+  --color-primary: #2563eb;
+  --color-secondary: #64748b;
+  --color-success: #16a34a;
+  --color-warning: #ea580c;
+  --color-error: #dc2626;
+  --color-info: #0ea5e9;
+  
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+@layer utilities {
+  .sr-only {
+    @apply absolute w-px h-px p-0 -m-px overflow-hidden border-0 whitespace-nowrap clip-path-[inset(50%)];
+  }
+}

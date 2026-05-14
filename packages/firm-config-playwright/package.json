@@ -1,0 +1,37 @@
+{
+  "name": "firm-config-playwright",
+  "version": "1.0.0",
+  "description": "Shared Playwright configuration factory for the firm platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "vitest",
+    "test:ci": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@playwright/test": "^1.40.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.40.0",
+    "typescript": ">=5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

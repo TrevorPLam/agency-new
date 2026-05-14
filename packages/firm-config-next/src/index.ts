@@ -73,6 +73,8 @@ export function createNextConfig(options: {
     // Server external packages for serverless compatibility
     serverExternalPackages: [
       'pino',
+      'drizzle-orm',
+      'postgres',
       '@firm/observability',
       ...serverExternalPackages,
     ],

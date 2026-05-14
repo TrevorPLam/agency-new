@@ -90,6 +90,11 @@ export function createBoundariesPreset(): FlatConfig[] {
             pattern: 'packages/firm-env/**',
             mode: 'public',
           },
+          {
+            type: 'workers',
+            pattern: 'workers/**',
+            mode: 'public',
+          },
         ],
       },
       plugins: {
@@ -186,6 +191,12 @@ export function createBoundariesPreset(): FlatConfig[] {
               // Env can import all above layers (highest layer)
               {
                 from: 'env',
+                allow: ['*'],
+              },
+              
+              // Workers can import all layers (same privilege as env)
+              {
+                from: 'workers',
                 allow: ['*'],
               },
             ],

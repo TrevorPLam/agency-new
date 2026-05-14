@@ -1,0 +1,36 @@
+{
+  "name": "firm-config-storybook",
+  "version": "1.0.0",
+  "description": "Shared Storybook configuration factory for the firm platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "vitest",
+    "test:ci": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "@storybook/react-vite": ">=7.0.0",
+    "typescript": ">=5.6.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

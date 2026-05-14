@@ -86,3 +86,21 @@ export function createServiceConfig(overrides: Partial<CompilerOptions> = {}): C
     ...overrides,
   });
 }
+
+/**
+ * Creates a TypeScript configuration for workers (Cloudflare Workers, Node.js workers).
+ * Excludes DOM/browser APIs to prevent accidental browser-only imports.
+ */
+export function createWorkerConfig(overrides: Partial<CompilerOptions> = {}): CompilerOptions {
+  return createTsConfig({
+    lib: ['ES2022'],
+    outDir: './dist',
+    rootDir: './src',
+    composite: true,
+    declaration: true,
+    declarationMap: true,
+    sourceMap: true,
+    removeComments: false,
+    ...overrides,
+  });
+}

@@ -6,7 +6,7 @@
  */
 
 import type { SessionRevocationOptions } from './types';
-import type { UserId, TenantId } from '@firm/types';
+import type { UserId, TenantId } from '@firm/primitives';
 import { betterAuth } from './better-auth-instance';
 
 /**

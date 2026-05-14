@@ -99,7 +99,7 @@
 ---
 
 ### PH1.5 – Create missing Layer 0 config packages (8 new)
-- [ ] **PH1.5** | Status: Not Started
+- [x] **PH1.5** | Status: Completed
 
 **Related files:** `packages/firm-config-prettier`, `packages/firm-config-vitest`, `packages/firm-config-playwright`, `packages/firm-config-commitlint`, `packages/firm-config-docker`, `packages/firm-config-storybook`, `packages/firm-config-security-headers`, `packages/firm-config-k6`
 
@@ -109,19 +109,19 @@
 **Out of Scope:** Updating existing L0 configs (see PH1.6). **Rules:** L0 only — no imports from L1–L7; factory functions accept options and merge with opinionated defaults. **Anti-Patterns:** No credentials in config defaults; use env variable references. **DDD:** N/A | **TDD:** Snapshot or unit test per package | **BDD:** N/A | **Deep Module:** Each config package hides tooling complexity behind one factory call.
 
 #### Subtasks
-- [ ] **PH1.5.1** [AGENT] Scaffold `packages/firm-config-prettier/`: frozen Prettier config export, snapshot test, wire into root and all workspace `package.json`. File: `packages/firm-config-prettier/src/index.ts`.
-- [ ] **PH1.5.2** [AGENT] Scaffold `packages/firm-config-vitest/`: `createVitestConfig(options)` — Node/browser modes, coverage ≥80% thresholds, unit test, wire into all existing packages. File: `packages/firm-config-vitest/src/index.ts`.
-- [ ] **PH1.5.3** [AGENT] Scaffold `packages/firm-config-playwright/`: `createPlaywrightConfig(options)` — default browsers, base URLs, auth state, snapshot test. File: `packages/firm-config-playwright/src/index.ts`.
-- [ ] **PH1.5.4** [AGENT] Scaffold `packages/firm-config-commitlint/`: conventional commit config export, snapshot test, point root `commitlint.config.js` here. File: `packages/firm-config-commitlint/src/index.ts`.
-- [ ] **PH1.5.5** [AGENT] Scaffold `packages/firm-config-docker/`: `createDockerfile(options)` — hardened multi-stage Node.js Dockerfile (non-root UID 10000, `tini` PID 1, `HEALTHCHECK`), tests verifying required instructions. File: `packages/firm-config-docker/src/index.ts`.
-- [ ] **PH1.5.6** [AGENT] Scaffold `packages/firm-config-storybook/`: `createStorybookConfig(options)` — Vite builder, theme injection, snapshot test. File: `packages/firm-config-storybook/src/index.ts`.
-- [ ] **PH1.5.7** [AGENT] Scaffold `packages/firm-config-security-headers/`: `createSecurityHeaders(options)` — CSP/HSTS/Permissions-Policy, decoupled from Next.js, no `unsafe-inline` or `unsafe-eval` in default CSP, tests. File: `packages/firm-config-security-headers/src/index.ts`.
-- [ ] **PH1.5.8** [AGENT] Scaffold `packages/firm-config-k6/`: `createK6Config(options)` — base URLs, auth fixtures, ramp-up profiles, unit test, documented env vars. File: `packages/firm-config-k6/src/index.ts`.
+- [x] **PH1.5.1** [AGENT] Scaffold `packages/firm-config-prettier/`: frozen Prettier config export, snapshot test, wire into root and all workspace `package.json`. File: `packages/firm-config-prettier/src/index.ts`.
+- [x] **PH1.5.2** [AGENT] Scaffold `packages/firm-config-vitest/`: `createVitestConfig(options)` — Node/browser modes, coverage ≥80% thresholds, unit test, wire into all existing packages. File: `packages/firm-config-vitest/src/index.ts`.
+- [x] **PH1.5.3** [AGENT] Scaffold `packages/firm-config-playwright/`: `createPlaywrightConfig(options)` — default browsers, base URLs, auth state, snapshot test. File: `packages/firm-config-playwright/src/index.ts`.
+- [x] **PH1.5.4** [AGENT] Scaffold `packages/firm-config-commitlint/`: conventional commit config export, snapshot test, point root `commitlint.config.js` here. File: `packages/firm-config-commitlint/src/index.ts`.
+- [x] **PH1.5.5** [AGENT] Scaffold `packages/firm-config-docker/`: `createDockerfile(options)` — hardened multi-stage Node.js Dockerfile (non-root UID 10000, `tini` PID 1, `HEALTHCHECK`), tests verifying required instructions. File: `packages/firm-config-docker/src/index.ts`.
+- [x] **PH1.5.6** [AGENT] Scaffold `packages/firm-config-storybook/`: `createStorybookConfig(options)` — Vite builder, theme injection, snapshot test. File: `packages/firm-config-storybook/src/index.ts`.
+- [x] **PH1.5.7** [AGENT] Scaffold `packages/firm-config-security-headers/`: `createSecurityHeaders(options)` — CSP/HSTS/Permissions-Policy, decoupled from Next.js, no `unsafe-inline` or `unsafe-eval` in default CSP, tests. File: `packages/firm-config-security-headers/src/index.ts`.
+- [x] **PH1.5.8** [AGENT] Scaffold `packages/firm-config-k6/`: `createK6Config(options)` — base URLs, auth fixtures, ramp-up profiles, unit test, documented env vars. File: `packages/firm-config-k6/src/index.ts`.
 
 ---
 
 ### PH1.6 – Update existing Layer 0 config packages (4 existing)
-- [ ] **PH1.6** | Status: Not Started
+- [x] **PH1.6** | Status: Completed
 
 **Related files:** `packages/firm-config-typescript`, `packages/firm-config-tailwind`, `packages/firm-config-next`, `packages/firm-config-eslint`
 
@@ -135,10 +135,10 @@
 **Out of Scope:** New config packages (PH1.5). **Rules:** Extend factory functions; do not remove existing rules without an ADR. **Anti-Patterns:** No rule removal without documentation. **DDD:** N/A | **TDD:** Update existing tests to cover new variants | **BDD:** N/A | **Deep Module:** N/A
 
 #### Subtasks
-- [ ] **PH1.6.1** [AGENT] Add `worker` tsconfig variant. File: `packages/firm-config-typescript/src/worker.ts`.
-- [ ] **PH1.6.2** [AGENT] Add `v4/` export. File: `packages/firm-config-tailwind/src/v4.ts`.
-- [ ] **PH1.6.3** [AGENT] Add `serverExternalPackages`. File: `packages/firm-config-next/src/index.ts`.
-- [ ] **PH1.6.4** [AGENT] Add 3 ESLint rules and `workers` boundary type. File: `packages/firm-config-eslint/src/presets/boundaries.ts`.
+- [x] **PH1.6.1** [AGENT] Add `worker` tsconfig variant. File: `packages/firm-config-typescript/src/worker.ts`.
+- [x] **PH1.6.2** [AGENT] Add `v4/` export. File: `packages/firm-config-tailwind/src/v4.ts`.
+- [x] **PH1.6.3** [AGENT] Add `serverExternalPackages`. File: `packages/firm-config-next/src/index.ts`.
+- [x] **PH1.6.4** [AGENT] Add 3 ESLint rules and `workers` boundary type. File: `packages/firm-config-eslint/src/presets/boundaries.ts`.
 
 ---
 

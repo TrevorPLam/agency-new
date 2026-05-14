@@ -9,7 +9,7 @@ import { createDelegatedSession, revokeSession } from './session';
 import { checkDelegationPermission } from './permissions/guard';
 import { AuthorizationError, ValidationError, NotFoundError } from '@firm/errors';
 import type { SessionContext } from './session/types';
-import type { UserId, TenantId } from '@firm/types';
+import type { UserId, TenantId } from '@firm/primitives';
 import { generateUUID } from '@firm/crypto';
 
 export interface DelegationGrantOptions {

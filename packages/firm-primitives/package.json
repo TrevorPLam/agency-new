@@ -1,7 +1,7 @@
 {
-  "name": "@firm/types",
+  "name": "@firm/primitives",
   "version": "1.0.0",
-  "description": "Core types and interfaces for the Firm platform",
+  "description": "Core primitive types and branded IDs for the Firm platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -20,10 +20,6 @@
     "test": "vitest",
     "test:types": "tsc --noEmit",
     "clean": "rm -rf dist"
-  },
-  "dependencies": {
-    "@firm/primitives": "workspace:*",
-    "@firm/utils": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

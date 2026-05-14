@@ -1,12 +1,11 @@
 /**
  * Branded type definitions for Firm platform
  * Uses unique symbol branding to create type-safe identifiers
+ * Domain-level IDs only - L0 primitives moved to @firm/primitives
  */
 
 
 // Brand symbols for type safety
-declare const TenantIdBrand: unique symbol;
-declare const UserIdBrand: unique symbol;
 declare const LeadIdBrand: unique symbol;
 declare const CampaignIdBrand: unique symbol;
 declare const BookingIdBrand: unique symbol;
@@ -16,14 +15,11 @@ declare const EmailTemplateIdBrand: unique symbol;
 declare const FormIdBrand: unique symbol;
 declare const WebhookIdBrand: unique symbol;
 declare const ApiKeyIdBrand: unique symbol;
-declare const SessionIdBrand: unique symbol;
 declare const AuditLogIdBrand: unique symbol;
 declare const SyncJobIdBrand: unique symbol;
 declare const ReportIdBrand: unique symbol;
 
 // Branded type definitions
-export type TenantId = string & { readonly [TenantIdBrand]: true };
-export type UserId = string & { readonly [UserIdBrand]: true };
 export type LeadId = string & { readonly [LeadIdBrand]: true };
 export type CampaignId = string & { readonly [CampaignIdBrand]: true };
 export type BookingId = string & { readonly [BookingIdBrand]: true };
@@ -33,7 +29,6 @@ export type EmailTemplateId = string & { readonly [EmailTemplateIdBrand]: true }
 export type FormId = string & { readonly [FormIdBrand]: true };
 export type WebhookId = string & { readonly [WebhookIdBrand]: true };
 export type ApiKeyId = string & { readonly [ApiKeyIdBrand]: true };
-export type SessionId = string & { readonly [SessionIdBrand]: true };
 export type AuditLogId = string & { readonly [AuditLogIdBrand]: true };
 export type SyncJobId = string & { readonly [SyncJobIdBrand]: true };
 export type ReportId = string & { readonly [ReportIdBrand]: true };
@@ -52,20 +47,6 @@ function isValidUuid(value: string): boolean {
  * Gatekeeper factory functions for creating branded IDs
  * These validate the UUID format but keep the brand opaque
  */
-
-export function asTenantId(value: string): TenantId {
-  if (!isValidUuid(value)) {
-    throw new Error(`Invalid TenantId: ${value}. Must be a valid UUID v4.`);
-  }
-  return value as TenantId;
-}
-
-export function asUserId(value: string): UserId {
-  if (!isValidUuid(value)) {
-    throw new Error(`Invalid UserId: ${value}. Must be a valid UUID v4.`);
-  }
-  return value as UserId;
-}
 
 export function asLeadId(value: string): LeadId {
   if (!isValidUuid(value)) {
@@ -130,13 +111,6 @@ export function asApiKeyId(value: string): ApiKeyId {
   return value as ApiKeyId;
 }
 
-export function asSessionId(value: string): SessionId {
-  if (!isValidUuid(value)) {
-    throw new Error(`Invalid SessionId: ${value}. Must be a valid UUID v4.`);
-  }
-  return value as SessionId;
-}
-
 export function asAuditLogId(value: string): AuditLogId {
   if (!isValidUuid(value)) {
     throw new Error(`Invalid AuditLogId: ${value}. Must be a valid UUID v4.`);
@@ -161,14 +135,6 @@ export function asReportId(value: string): ReportId {
 /**
  * Type guard functions for runtime checking
  */
-export function isTenantId(value: unknown): value is TenantId {
-  return typeof value === 'string' && isValidUuid(value);
-}
-
-export function isUserId(value: unknown): value is UserId {
-  return typeof value === 'string' && isValidUuid(value);
-}
-
 export function isLeadId(value: unknown): value is LeadId {
   return typeof value === 'string' && isValidUuid(value);
 }
@@ -205,10 +171,6 @@ export function isApiKeyId(value: unknown): value is ApiKeyId {
   return typeof value === 'string' && isValidUuid(value);
 }
 
-export function isSessionId(value: unknown): value is SessionId {
-  return typeof value === 'string' && isValidUuid(value);
-}
-
 export function isAuditLogId(value: unknown): value is AuditLogId {
   return typeof value === 'string' && isValidUuid(value);
 }
@@ -233,8 +195,6 @@ export function extractId<T extends string>(brandedId: T): string {
  * Type for any branded ID (useful for generic operations)
  */
 export type BrandedId = 
-  | TenantId
-  | UserId
   | LeadId
   | CampaignId
   | BookingId
@@ -244,7 +204,6 @@ export type BrandedId =
   | FormId
   | WebhookId
   | ApiKeyId
-  | SessionId
   | AuditLogId
   | SyncJobId
   | ReportId;

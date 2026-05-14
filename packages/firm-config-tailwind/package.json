@@ -10,6 +10,7 @@
     "./components.css": "./src/components.css",
     "./utilities.css": "./src/utilities.css",
     "./safelist.js": "./src/safelist.js",
+    "./v4": "./src/tailwind-v4.css",
     "./package.json": "./package.json"
   },
   "files": [

@@ -9,7 +9,7 @@ import { createImpersonatedSession, revokeSession, verifySession } from './sessi
 import { checkImpersonationPermission } from './permissions/guard';
 import { AuthorizationError, NotFoundError, ValidationError } from '@firm/errors';
 import type { SessionContext } from './session/types';
-import type { UserId, TenantId } from '@firm/types';
+import type { UserId, TenantId } from '@firm/primitives';
 import { generateUUID } from '@firm/crypto';
 
 

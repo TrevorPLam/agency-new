@@ -23,6 +23,7 @@ import { createReactPreset } from './presets/react';
 import { createNextJSPreset } from './presets/nextjs';
 import { createBoundariesPreset } from './presets/boundaries';
 import { createImportsPreset } from './presets/imports';
+import { createCustomRulesPreset } from './presets/custom-rules';
 
 export interface ConfigOptions {
   /**
@@ -74,6 +75,9 @@ export function createConfig(options: ConfigOptions = {}): FlatConfig[] {
   const configs: FlatConfig[] = [
     // Always include base configuration
     ...createBasePreset(),
+    
+    // Always include custom firm rules
+    ...createCustomRulesPreset(),
   ];
 
   // Add optional presets
@@ -131,6 +135,7 @@ export {
   createNextJSPreset,
   createBoundariesPreset,
   createImportsPreset,
+  createCustomRulesPreset,
 };
 
 // Re-export typescript-eslint config helper for compatibility
